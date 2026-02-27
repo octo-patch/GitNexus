@@ -303,7 +303,7 @@ GitNexus builds a complete knowledge graph of your codebase through a multi-phas
 
 ### Supported Languages
 
-TypeScript, JavaScript, Python, Java, C, C++, C#, Go, Rust
+TypeScript, JavaScript, Python, Java, C, C++, C#, Go, Rust, PHP, Ruby
 
 ---
 

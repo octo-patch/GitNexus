@@ -53,7 +53,9 @@ const resolveImportPath = (
     // Go
     '.go',
     // Rust
-    '.rs', '/mod.rs'
+    '.rs', '/mod.rs',
+    // Ruby
+    '.rb', '.rake',
   ];
   
   if (importPath.startsWith('.')) {

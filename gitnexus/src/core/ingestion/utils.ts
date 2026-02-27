@@ -37,6 +37,16 @@ export const getLanguageFromFilename = (filename: string): SupportedLanguages | 
       filename.endsWith('.php5') || filename.endsWith('.php8')) {
     return SupportedLanguages.PHP;
   }
+  // Ruby (extensions)
+  if (filename.endsWith('.rb') || filename.endsWith('.rake') || filename.endsWith('.gemspec')) {
+    return SupportedLanguages.Ruby;
+  }
+  // Ruby (extensionless files)
+  const basename = filename.split('/').pop() || filename;
+  const RUBY_FILENAMES = ['Rakefile', 'Gemfile', 'Guardfile', 'Vagrantfile', 'Brewfile', 'Capfile', 'Thorfile', 'Berksfile'];
+  if (RUBY_FILENAMES.includes(basename)) {
+    return SupportedLanguages.Ruby;
+  }
   return null;
 };
 

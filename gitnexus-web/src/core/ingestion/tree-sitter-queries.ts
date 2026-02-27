@@ -396,6 +396,41 @@ export const PHP_QUERIES = `
       [(name) (qualified_name)] @heritage.trait))) @heritage
 `;
 
+// Ruby queries - works with tree-sitter-ruby
+// NOTE: Ruby uses `call` for require, include, extend, prepend, attr_* etc.
+// These are all captured as @call and routed in JS post-processing:
+//   - require/require_relative → import extraction
+//   - include/extend/prepend → heritage (mixin) extraction
+//   - attr_accessor/attr_reader/attr_writer → property definition extraction
+//   - everything else → regular call extraction
+export const RUBY_QUERIES = `
+; ── Modules ──────────────────────────────────────────────────────────────────
+(module
+  name: (constant) @name) @definition.module
+
+; ── Classes ──────────────────────────────────────────────────────────────────
+(class
+  name: (constant) @name) @definition.class
+
+; ── Instance methods ─────────────────────────────────────────────────────────
+(method
+  name: (identifier) @name) @definition.method
+
+; ── Singleton (class-level) methods ──────────────────────────────────────────
+(singleton_method
+  name: (identifier) @name) @definition.function
+
+; ── All calls (require, include, attr_*, and regular calls routed in JS) ─────
+(call
+  method: (identifier) @call.name) @call
+
+; ── Heritage: class < SuperClass ─────────────────────────────────────────────
+(class
+  name: (constant) @heritage.class
+  superclass: (superclass
+    (constant) @heritage.extends)) @heritage
+`;
+
 export const LANGUAGE_QUERIES: Record<SupportedLanguages, string> = {
   [SupportedLanguages.TypeScript]: TYPESCRIPT_QUERIES,
   [SupportedLanguages.JavaScript]: JAVASCRIPT_QUERIES,
@@ -407,5 +442,6 @@ export const LANGUAGE_QUERIES: Record<SupportedLanguages, string> = {
   [SupportedLanguages.CSharp]: CSHARP_QUERIES,
   [SupportedLanguages.Rust]: RUST_QUERIES,
   [SupportedLanguages.PHP]: PHP_QUERIES,
+  [SupportedLanguages.Ruby]: RUBY_QUERIES,
 };
  

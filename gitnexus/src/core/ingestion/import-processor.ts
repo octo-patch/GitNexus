@@ -176,6 +176,8 @@ const EXTENSIONS = [
   '.rs', '/mod.rs',
   // PHP
   '.php', '.phtml',
+  // Ruby
+  '.rb', '.rake',
 ];
 
 /**

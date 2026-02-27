@@ -10,6 +10,7 @@ import CSharp from 'tree-sitter-c-sharp';
 import Go from 'tree-sitter-go';
 import Rust from 'tree-sitter-rust';
 import PHP from 'tree-sitter-php';
+import Ruby from 'tree-sitter-ruby';
 import { SupportedLanguages } from '../../../config/supported-languages.js';
 import { LANGUAGE_QUERIES } from '../tree-sitter-queries.js';
 import { getLanguageFromFilename } from '../utils.js';
@@ -103,6 +104,7 @@ const languageMap: Record<string, any> = {
   [SupportedLanguages.Go]: Go,
   [SupportedLanguages.Rust]: Rust,
   [SupportedLanguages.PHP]: PHP.php_only,
+  [SupportedLanguages.Ruby]: Ruby,
 };
 
 const setLanguage = (language: SupportedLanguages, filePath: string): void => {
@@ -206,6 +208,10 @@ const isNodeExported = (node: any, name: string, language: string): boolean => {
       // Top-level functions (no parent class) are globally accessible
       return true;
 
+    // Ruby: All top-level definitions are public by default
+    case 'ruby':
+      return true;
+
     default:
       return false;
   }
@@ -222,6 +228,8 @@ const FUNCTION_NODE_TYPES = new Set([
   'method_declaration', 'constructor_declaration',
   'local_function_statement', 'function_item', 'impl_item',
   'anonymous_function_creation_expression',  // PHP anonymous functions
+  'method',           // Ruby: def foo
+  'singleton_method', // Ruby: def self.foo
 ]);
 
 /** Walk up AST to find enclosing function, return its generateId or null for top-level */
@@ -255,6 +263,17 @@ const findEnclosingFunctionId = (node: any, filePath: string): string | null => 
           current.children?.find((c: any) => c.type === 'identifier');
         funcName = nameNode?.text;
         label = 'Method';
+      } else if (current.type === 'method') {
+        // Ruby instance method: def foo
+        const nameNode = current.childForFieldName?.('name') ||
+          current.children?.find((c: any) => c.type === 'identifier');
+        funcName = nameNode?.text;
+        label = 'Method';
+      } else if (current.type === 'singleton_method') {
+        // Ruby class method: def self.foo
+        const nameNode = current.childForFieldName?.('name') ||
+          current.children?.find((c: any) => c.type === 'identifier');
+        funcName = nameNode?.text;
       } else if (current.type === 'arrow_function' || current.type === 'function_expression') {
         const parent = current.parent;
         if (parent?.type === 'variable_declarator') {
@@ -336,6 +355,21 @@ const BUILT_INS = new Set([
   'preg_match', 'preg_match_all', 'preg_replace', 'preg_split',
   'header', 'session_start', 'session_destroy', 'ob_start', 'ob_end_clean', 'ob_get_clean',
   'dd', 'dump',
+  // Ruby built-ins and Kernel methods
+  'puts', 'print', 'p', 'pp', 'warn', 'raise', 'fail',
+  'require', 'require_relative', 'load', 'autoload',
+  'include', 'extend', 'prepend',
+  'attr_accessor', 'attr_reader', 'attr_writer',
+  'public', 'private', 'protected', 'module_function',
+  'lambda', 'proc', 'block_given?',
+  'nil?', 'is_a?', 'kind_of?', 'instance_of?', 'respond_to?',
+  'freeze', 'frozen?', 'dup', 'clone', 'tap', 'then', 'yield_self',
+  // Ruby enumerables
+  'each', 'map', 'select', 'reject', 'find', 'detect', 'collect',
+  'inject', 'reduce', 'flat_map', 'each_with_object', 'each_with_index',
+  'any?', 'all?', 'none?', 'count', 'first', 'last',
+  'sort', 'sort_by', 'min', 'max', 'min_by', 'max_by',
+  'group_by', 'partition', 'zip', 'compact', 'flatten', 'uniq',
 ]);
 
 // ============================================================================
@@ -609,6 +643,111 @@ const processFileGroup = (
         const callNameNode = captureMap['call.name'];
         if (callNameNode) {
           const calledName = callNameNode.text;
+
+          // Ruby: route special calls to imports, heritage, or properties
+          if (language === SupportedLanguages.Ruby) {
+            const callNode = captureMap['call'];
+
+            // require/require_relative → import extraction
+            if (calledName === 'require' || calledName === 'require_relative') {
+              const argList = callNode.childForFieldName?.('arguments');
+              const stringNode = argList?.children?.find((c: any) => c.type === 'string');
+              const contentNode = stringNode?.children?.find((c: any) => c.type === 'string_content');
+              if (contentNode) {
+                let importPath = contentNode.text;
+                // require_relative always resolves relative to current file
+                if (calledName === 'require_relative' && !importPath.startsWith('.')) {
+                  importPath = './' + importPath;
+                }
+                result.imports.push({
+                  filePath: file.path,
+                  rawImportPath: importPath,
+                  language: language,
+                });
+              }
+              continue;
+            }
+
+            // include/extend/prepend → heritage (mixin)
+            if (calledName === 'include' || calledName === 'extend' || calledName === 'prepend') {
+              let enclosingClass: string | null = null;
+              let current = callNode.parent;
+              while (current) {
+                if (current.type === 'class' || current.type === 'module') {
+                  const nameNode = current.childForFieldName?.('name');
+                  if (nameNode) {
+                    enclosingClass = nameNode.text;
+                    break;
+                  }
+                }
+                current = current.parent;
+              }
+              if (enclosingClass) {
+                const argList = callNode.childForFieldName?.('arguments');
+                for (const arg of (argList?.children ?? [])) {
+                  if (arg.type === 'constant' || arg.type === 'scope_resolution') {
+                    result.heritage.push({
+                      filePath: file.path,
+                      className: enclosingClass,
+                      parentName: arg.text,
+                      kind: calledName === 'extend' ? 'extends' : 'trait-impl',
+                    });
+                  }
+                }
+              }
+              continue;
+            }
+
+            // attr_accessor/attr_reader/attr_writer → property definitions
+            if (calledName === 'attr_accessor' || calledName === 'attr_reader' || calledName === 'attr_writer') {
+              const argList = callNode.childForFieldName?.('arguments');
+              for (const arg of (argList?.children ?? [])) {
+                if (arg.type === 'simple_symbol') {
+                  const propName = arg.text.replace(/^:/, '');
+                  const nodeId = generateId('Property', `${file.path}:${propName}`);
+                  result.nodes.push({
+                    id: nodeId,
+                    label: 'Property',
+                    properties: {
+                      name: propName,
+                      filePath: file.path,
+                      startLine: arg.startPosition.row,
+                      endLine: arg.endPosition.row,
+                      language: language,
+                      isExported: true,
+                      description: calledName,
+                    },
+                  });
+                  result.symbols.push({
+                    filePath: file.path,
+                    name: propName,
+                    nodeId,
+                    type: 'Property',
+                  });
+                  const fileId = generateId('File', file.path);
+                  const relId = generateId('DEFINES', `${fileId}->${nodeId}`);
+                  result.relationships.push({
+                    id: relId,
+                    sourceId: fileId,
+                    targetId: nodeId,
+                    type: 'DEFINES',
+                    confidence: 1.0,
+                    reason: '',
+                  });
+                }
+              }
+              continue;
+            }
+
+            // Regular Ruby call (skip built-ins)
+            if (!BUILT_INS.has(calledName)) {
+              const sourceId = findEnclosingFunctionId(callNode, file.path)
+                || generateId('File', file.path);
+              result.calls.push({ filePath: file.path, calledName, sourceId });
+            }
+            continue;
+          }
+
           if (!BUILT_INS.has(calledName)) {
             const callNode = captureMap['call'];
             const sourceId = findEnclosingFunctionId(callNode, file.path)

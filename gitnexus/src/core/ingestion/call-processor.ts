@@ -37,6 +37,9 @@ const FUNCTION_NODE_TYPES = new Set([
   // Rust
   'function_item',
   'impl_item', // Methods inside impl blocks
+  // Ruby
+  'method',           // def foo
+  'singleton_method', // def self.foo
 ]);
 
 /**
@@ -94,6 +97,18 @@ const findEnclosingFunction = (
                          current.children?.find((c: any) => c.type === 'identifier');
         funcName = nameNode?.text;
         label = 'Method'; // Treat constructors as methods for process detection
+      } else if (current.type === 'method') {
+        // Ruby instance method: def foo
+        const nameNode = current.childForFieldName?.('name') ||
+                         current.children?.find((c: any) => c.type === 'identifier');
+        funcName = nameNode?.text;
+        label = 'Method';
+      } else if (current.type === 'singleton_method') {
+        // Ruby class method: def self.foo
+        const nameNode = current.childForFieldName?.('name') ||
+                         current.children?.find((c: any) => c.type === 'identifier');
+        funcName = nameNode?.text;
+        label = 'Function';
       } else if (current.type === 'arrow_function' || current.type === 'function_expression') {
         // Arrow/expression: const foo = () => {} - check parent variable declarator
         const parent = current.parent;
@@ -336,6 +351,21 @@ const BUILT_IN_NAMES = new Set([
   'mutex_lock', 'mutex_unlock', 'mutex_init',
   'kfree', 'kmalloc', 'kzalloc', 'kcalloc', 'krealloc', 'kvmalloc', 'kvfree',
   'get', 'put',
+  // Ruby built-ins and Kernel methods
+  'puts', 'print', 'p', 'pp', 'warn', 'raise', 'fail',
+  'require', 'require_relative', 'load', 'autoload',
+  'include', 'extend', 'prepend',
+  'attr_accessor', 'attr_reader', 'attr_writer',
+  'public', 'private', 'protected', 'module_function',
+  'lambda', 'proc', 'block_given?',
+  'nil?', 'is_a?', 'kind_of?', 'instance_of?', 'respond_to?',
+  'freeze', 'frozen?', 'dup', 'clone', 'tap', 'then', 'yield_self',
+  // Ruby enumerables
+  'each', 'map', 'select', 'reject', 'find', 'detect', 'collect',
+  'inject', 'reduce', 'flat_map', 'each_with_object', 'each_with_index',
+  'any?', 'all?', 'none?', 'count', 'first', 'last',
+  'sort', 'sort_by', 'min', 'max', 'min_by', 'max_by',
+  'group_by', 'partition', 'zip', 'compact', 'flatten', 'uniq',
 ]);
 
 const isBuiltInOrNoise = (name: string): boolean => BUILT_IN_NAMES.has(name);

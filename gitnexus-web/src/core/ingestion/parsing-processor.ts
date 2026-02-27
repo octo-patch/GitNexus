@@ -104,7 +104,11 @@ const isNodeExported = (node: any, name: string, language: string): boolean => {
     case 'c':
     case 'cpp':
       return false;
-    
+
+    // Ruby: All top-level definitions are public by default
+    case 'ruby':
+      return true;
+
     default:
       return false;
   }

@@ -257,16 +257,33 @@ export function detectFrameworkFromPath(filePath: string): FrameworkHint | null 
     return { framework: 'laravel', entryPointMultiplier: 1.5, reason: 'laravel-repository' };
   }
 
+  // ========== RUBY ==========
+
+  // Ruby: lib/ directory (main library code)
+  if (p.includes('/lib/') && p.endsWith('.rb')) {
+    return { framework: 'ruby', entryPointMultiplier: 1.5, reason: 'ruby-lib' };
+  }
+
+  // Ruby: bin/ or exe/ (CLI entry points)
+  if ((p.includes('/bin/') || p.includes('/exe/')) && p.endsWith('.rb')) {
+    return { framework: 'ruby', entryPointMultiplier: 2.5, reason: 'ruby-executable' };
+  }
+
+  // Ruby: Rakefile or *.rake (task definitions)
+  if (p.endsWith('/rakefile') || p.endsWith('.rake')) {
+    return { framework: 'ruby', entryPointMultiplier: 1.5, reason: 'ruby-rake' };
+  }
+
   // ========== GENERIC PATTERNS ==========
 
   // Any language: index files in API folders
   if (p.includes('/api/') && (
-    p.endsWith('/index.ts') || p.endsWith('/index.js') || 
+    p.endsWith('/index.ts') || p.endsWith('/index.js') ||
     p.endsWith('/__init__.py')
   )) {
     return { framework: 'api', entryPointMultiplier: 1.8, reason: 'api-index' };
   }
-  
+
   // No framework detected - return null for graceful fallback (1.0 multiplier)
   return null;
 }

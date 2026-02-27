@@ -257,6 +257,23 @@ export function detectFrameworkFromPath(filePath: string): FrameworkHint | null 
     return { framework: 'laravel', entryPointMultiplier: 1.5, reason: 'laravel-repository' };
   }
 
+  // ========== RUBY ==========
+
+  // Ruby: lib/ directory (main library code)
+  if (p.includes('/lib/') && p.endsWith('.rb')) {
+    return { framework: 'ruby', entryPointMultiplier: 1.5, reason: 'ruby-lib' };
+  }
+
+  // Ruby: bin/ or exe/ (CLI entry points)
+  if ((p.includes('/bin/') || p.includes('/exe/')) && p.endsWith('.rb')) {
+    return { framework: 'ruby', entryPointMultiplier: 2.5, reason: 'ruby-executable' };
+  }
+
+  // Ruby: Rakefile or *.rake (task definitions)
+  if (p.endsWith('/rakefile') || p.endsWith('.rake')) {
+    return { framework: 'ruby', entryPointMultiplier: 1.5, reason: 'ruby-rake' };
+  }
+
   // ========== GENERIC PATTERNS ==========
 
   // Any language: index files in API folders
