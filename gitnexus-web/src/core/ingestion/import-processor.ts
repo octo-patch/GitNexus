@@ -222,6 +222,45 @@ export const processImports = async (
           importMap.get(file.path)!.add(resolvedPath);
         }
       }
+
+      // ---- Ruby: require/require_relative come through @call, not @import ----
+      if (language === 'ruby' && captureMap['call']) {
+        const callNameNode = captureMap['call.name'];
+        if (callNameNode) {
+          const calledName = callNameNode.text;
+          if (calledName === 'require' || calledName === 'require_relative') {
+            const callNode = captureMap['call'];
+            const argList = callNode.childForFieldName?.('arguments');
+            const stringNode = argList?.children?.find((c: any) => c.type === 'string');
+            const contentNode = stringNode?.children?.find((c: any) => c.type === 'string_content');
+            if (contentNode) {
+              let importPath = contentNode.text;
+              // require_relative always resolves relative to current file
+              if (calledName === 'require_relative' && !importPath.startsWith('.')) {
+                importPath = './' + importPath;
+              }
+              totalImportsFound++;
+              const resolvedPath = resolveImportPath(
+                file.path, importPath, allFilePaths, allFileList, resolveCache
+              );
+              if (resolvedPath) {
+                const sourceId = generateId('File', file.path);
+                const targetId = generateId('File', resolvedPath);
+                const relId = generateId('IMPORTS', `${file.path}->${resolvedPath}`);
+                totalImportsResolved++;
+                graph.addRelationship({
+                  id: relId, sourceId, targetId,
+                  type: 'IMPORTS', confidence: 1.0, reason: '',
+                });
+                if (!importMap.has(file.path)) {
+                  importMap.set(file.path, new Set());
+                }
+                importMap.get(file.path)!.add(resolvedPath);
+              }
+            }
+          }
+        }
+      }
     });
 
     // If re-parsed just for this, delete the tree to save memory

@@ -31,6 +31,7 @@ function isTestFilePath(filePath: string): boolean {
     p.includes('/test/') || p.includes('/tests/') ||
     p.includes('/testing/') || p.includes('/fixtures/') ||
     p.endsWith('_test.go') || p.endsWith('_test.py') ||
+    p.endsWith('_spec.rb') || p.endsWith('_test.rb') || p.includes('/spec/') ||
     p.includes('/test_') || p.includes('/conftest.')
   );
 }

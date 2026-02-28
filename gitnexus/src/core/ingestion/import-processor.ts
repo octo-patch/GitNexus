@@ -840,6 +840,42 @@ export const processImports = async (
           addImportEdge(file.path, resolvedPath);
         }
       }
+
+      // ---- Ruby: require/require_relative come through @call, not @import ----
+      if (language === SupportedLanguages.Ruby && captureMap['call']) {
+        const callNameNode = captureMap['call.name'];
+        if (callNameNode) {
+          const calledName = callNameNode.text;
+          if (calledName === 'require' || calledName === 'require_relative') {
+            const callNode = captureMap['call'];
+            const argList = callNode.childForFieldName?.('arguments');
+            const stringNode = argList?.children?.find((c: any) => c.type === 'string');
+            const contentNode = stringNode?.children?.find((c: any) => c.type === 'string_content');
+            if (contentNode) {
+              let importPath = contentNode.text;
+              // require_relative always resolves relative to current file
+              if (calledName === 'require_relative' && !importPath.startsWith('.')) {
+                importPath = './' + importPath;
+              }
+              totalImportsFound++;
+              const resolvedPath = resolveImportPath(
+                file.path,
+                importPath,
+                allFilePaths,
+                allFileList,
+                normalizedFileList,
+                resolveCache,
+                language,
+                tsconfigPaths,
+                index,
+              );
+              if (resolvedPath) {
+                addImportEdge(file.path, resolvedPath);
+              }
+            }
+          }
+        }
+      }
     });
 
     // Tree is now owned by the LRU cache — no manual delete needed

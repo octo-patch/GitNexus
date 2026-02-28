@@ -13,7 +13,7 @@
 import { detectFrameworkFromPath } from './framework-detection';
 
 // ============================================================================
-// NAME PATTERNS - All 9 supported languages
+// NAME PATTERNS - All 11 supported languages
 // ============================================================================
 
 /**
@@ -128,9 +128,7 @@ const ENTRY_POINT_PATTERNS: Record<string, RegExp[]> = {
   'ruby': [
     /^call$/,                 // Service objects (MyService.call)
     /^perform$/,              // Background jobs (Sidekiq, ActiveJob)
-    /^run$/,                  // CLI commands, scripts
     /^execute$/,              // Command pattern
-    /^initialize$/,           // Constructor
   ],
 };
 

@@ -1,5 +1,8 @@
 import { SupportedLanguages } from '../../config/supported-languages';
 
+/** Ruby extensionless filenames recognised as Ruby source */
+const RUBY_EXTENSIONLESS_FILES = new Set(['Rakefile', 'Gemfile', 'Guardfile', 'Vagrantfile', 'Brewfile']);
+
 /**
  * Map file extension to SupportedLanguage enum
  */
@@ -37,8 +40,7 @@ export const getLanguageFromFilename = (filename: string): SupportedLanguages | 
   }
   // Ruby (extensionless files)
   const basename = filename.split('/').pop() || filename;
-  const RUBY_FILENAMES = ['Rakefile', 'Gemfile', 'Guardfile', 'Vagrantfile', 'Brewfile', 'Capfile', 'Thorfile', 'Berksfile'];
-  if (RUBY_FILENAMES.includes(basename)) {
+  if (RUBY_EXTENSIONLESS_FILES.has(basename)) {
     return SupportedLanguages.Ruby;
   }
   return null;

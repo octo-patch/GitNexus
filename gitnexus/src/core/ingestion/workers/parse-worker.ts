@@ -274,6 +274,7 @@ const findEnclosingFunctionId = (node: any, filePath: string): string | null => 
         const nameNode = current.childForFieldName?.('name') ||
           current.children?.find((c: any) => c.type === 'identifier');
         funcName = nameNode?.text;
+        label = 'Function';
       } else if (current.type === 'arrow_function' || current.type === 'function_expression') {
         const parent = current.parent;
         if (parent?.type === 'variable_declarator') {
@@ -690,7 +691,7 @@ const processFileGroup = (
                       filePath: file.path,
                       className: enclosingClass,
                       parentName: arg.text,
-                      kind: calledName === 'extend' ? 'extends' : 'trait-impl',
+                      kind: 'trait-impl',
                     });
                   }
                 }

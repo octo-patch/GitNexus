@@ -210,6 +210,76 @@ export const processCalls = async (
 
       const calledName = nameNode.text;
 
+      // Ruby: route special calls to heritage or properties (imports handled by import-processor)
+      if (language === 'ruby') {
+        const callNode = captureMap['call'];
+
+        // require/require_relative → already handled by import-processor, skip
+        if (calledName === 'require' || calledName === 'require_relative') return;
+
+        // include/extend/prepend → heritage (mixin) relationships
+        if (calledName === 'include' || calledName === 'extend' || calledName === 'prepend') {
+          let enclosingClass: string | null = null;
+          let current = callNode.parent;
+          while (current) {
+            if (current.type === 'class' || current.type === 'module') {
+              const cn = current.childForFieldName?.('name');
+              if (cn) { enclosingClass = cn.text; break; }
+            }
+            current = current.parent;
+          }
+          if (enclosingClass) {
+            const argList = callNode.childForFieldName?.('arguments');
+            for (const arg of (argList?.children ?? [])) {
+              if (arg.type === 'constant' || arg.type === 'scope_resolution') {
+                const mixinName = arg.text;
+                const childId = symbolTable.lookupExact(file.path, enclosingClass) ||
+                                symbolTable.lookupFuzzy(enclosingClass)[0]?.nodeId ||
+                                generateId('Class', `${file.path}:${enclosingClass}`);
+                const parentId = symbolTable.lookupFuzzy(mixinName)[0]?.nodeId ||
+                                 generateId('Module', `${mixinName}`);
+                if (childId && parentId) {
+                  const relId = generateId('IMPLEMENTS', `${childId}->${parentId}`);
+                  graph.addRelationship({
+                    id: relId, sourceId: childId, targetId: parentId,
+                    type: 'IMPLEMENTS', confidence: 1.0, reason: 'trait-impl',
+                  });
+                }
+              }
+            }
+          }
+          return;
+        }
+
+        // attr_accessor/attr_reader/attr_writer → property definitions
+        if (calledName === 'attr_accessor' || calledName === 'attr_reader' || calledName === 'attr_writer') {
+          const argList = callNode.childForFieldName?.('arguments');
+          for (const arg of (argList?.children ?? [])) {
+            if (arg.type === 'simple_symbol') {
+              const propName = arg.text.replace(/^:/, '');
+              const nodeId = generateId('Property', `${file.path}:${propName}`);
+              graph.addNode({
+                id: nodeId,
+                label: 'Property' as any,
+                properties: {
+                  name: propName, filePath: file.path,
+                  startLine: arg.startPosition.row, endLine: arg.endPosition.row,
+                  language: 'ruby', isExported: true,
+                },
+              });
+              symbolTable.add(file.path, propName, nodeId, 'Property');
+              const fileId = generateId('File', file.path);
+              const relId = generateId('DEFINES', `${fileId}->${nodeId}`);
+              graph.addRelationship({
+                id: relId, sourceId: fileId, targetId: nodeId,
+                type: 'DEFINES', confidence: 1.0, reason: '',
+              });
+            }
+          }
+          return;
+        }
+      }
+
       // Skip common built-ins and noise
       if (isBuiltInOrNoise(calledName)) return;
 
@@ -226,10 +296,10 @@ export const processCalls = async (
       // 5. Find the enclosing function (caller)
       const callNode = captureMap['call'];
       const enclosingFuncId = findEnclosingFunction(callNode, file.path, symbolTable);
-      
+
       // Use enclosing function as source, fallback to file for top-level calls
       const sourceId = enclosingFuncId || generateId('File', file.path);
-      
+
       const relId = generateId('CALLS', `${sourceId}:${calledName}->${resolved.nodeId}`);
 
       graph.addRelationship({

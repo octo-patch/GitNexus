@@ -259,11 +259,6 @@ export function detectFrameworkFromPath(filePath: string): FrameworkHint | null 
 
   // ========== RUBY ==========
 
-  // Ruby: lib/ directory (main library code)
-  if (p.includes('/lib/') && p.endsWith('.rb')) {
-    return { framework: 'ruby', entryPointMultiplier: 1.5, reason: 'ruby-lib' };
-  }
-
   // Ruby: bin/ or exe/ (CLI entry points)
   if ((p.includes('/bin/') || p.includes('/exe/')) && p.endsWith('.rb')) {
     return { framework: 'ruby', entryPointMultiplier: 2.5, reason: 'ruby-executable' };

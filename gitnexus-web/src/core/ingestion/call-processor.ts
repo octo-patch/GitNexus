@@ -199,6 +199,76 @@ export const processCalls = async (
 
       const calledName = nameNode.text;
 
+      // Ruby: route special calls to heritage or properties (imports handled by import-processor)
+      if (language === 'ruby') {
+        const callNode = captureMap['call'];
+
+        // require/require_relative → already handled by import-processor, skip
+        if (calledName === 'require' || calledName === 'require_relative') return;
+
+        // include/extend/prepend → heritage (mixin) relationships
+        if (calledName === 'include' || calledName === 'extend' || calledName === 'prepend') {
+          let enclosingClass: string | null = null;
+          let current = callNode.parent;
+          while (current) {
+            if (current.type === 'class' || current.type === 'module') {
+              const cn = current.childForFieldName?.('name');
+              if (cn) { enclosingClass = cn.text; break; }
+            }
+            current = current.parent;
+          }
+          if (enclosingClass) {
+            const argList = callNode.childForFieldName?.('arguments');
+            for (const arg of (argList?.children ?? [])) {
+              if (arg.type === 'constant' || arg.type === 'scope_resolution') {
+                const mixinName = arg.text;
+                const childId = symbolTable.lookupExact(file.path, enclosingClass) ||
+                                symbolTable.lookupFuzzy(enclosingClass)[0]?.nodeId ||
+                                generateId('Class', `${file.path}:${enclosingClass}`);
+                const parentId = symbolTable.lookupFuzzy(mixinName)[0]?.nodeId ||
+                                 generateId('Module', `${mixinName}`);
+                if (childId && parentId) {
+                  const relId = generateId('IMPLEMENTS', `${childId}->${parentId}`);
+                  graph.addRelationship({
+                    id: relId, sourceId: childId, targetId: parentId,
+                    type: 'IMPLEMENTS', confidence: 1.0, reason: 'trait-impl',
+                  });
+                }
+              }
+            }
+          }
+          return;
+        }
+
+        // attr_accessor/attr_reader/attr_writer → property definitions
+        if (calledName === 'attr_accessor' || calledName === 'attr_reader' || calledName === 'attr_writer') {
+          const argList = callNode.childForFieldName?.('arguments');
+          for (const arg of (argList?.children ?? [])) {
+            if (arg.type === 'simple_symbol') {
+              const propName = arg.text.replace(/^:/, '');
+              const nodeId = generateId('Property', `${file.path}:${propName}`);
+              graph.addNode({
+                id: nodeId,
+                label: 'Property' as any,
+                properties: {
+                  name: propName, filePath: file.path,
+                  startLine: arg.startPosition.row, endLine: arg.endPosition.row,
+                  language: 'ruby', isExported: true,
+                },
+              });
+              symbolTable.add(file.path, propName, nodeId, 'Property');
+              const fileId = generateId('File', file.path);
+              const relId = generateId('DEFINES', `${fileId}->${nodeId}`);
+              graph.addRelationship({
+                id: relId, sourceId: fileId, targetId: nodeId,
+                type: 'DEFINES', confidence: 1.0, reason: '',
+              });
+            }
+          }
+          return;
+        }
+      }
+
       // Skip common built-ins and noise
       if (isBuiltInOrNoise(calledName)) return;
 
@@ -215,10 +285,10 @@ export const processCalls = async (
       // 5. Find the enclosing function (caller)
       const callNode = captureMap['call'];
       const enclosingFuncId = findEnclosingFunction(callNode, file.path, symbolTable);
-      
+
       // Use enclosing function as source, fallback to file for top-level calls
       const sourceId = enclosingFuncId || generateId('File', file.path);
-      
+
       const relId = generateId('CALLS', `${sourceId}:${calledName}->${resolved.nodeId}`);
 
       graph.addRelationship({
@@ -293,52 +363,72 @@ const resolveCallTarget = (
  * Filter out common built-in functions and noise
  * that shouldn't be tracked as calls
  */
-const isBuiltInOrNoise = (name: string): boolean => {
-  const builtIns = new Set([
-    // JavaScript/TypeScript built-ins
-    'console', 'log', 'warn', 'error', 'info', 'debug',
-    'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
-    'parseInt', 'parseFloat', 'isNaN', 'isFinite',
-    'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent',
-    'JSON', 'parse', 'stringify',
-    'Object', 'Array', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt',
-    'Map', 'Set', 'WeakMap', 'WeakSet',
-    'Promise', 'resolve', 'reject', 'then', 'catch', 'finally',
-    'Math', 'Date', 'RegExp', 'Error',
-    'require', 'import', 'export',
-    'fetch', 'Response', 'Request',
-    // React hooks and common functions
-    'useState', 'useEffect', 'useCallback', 'useMemo', 'useRef', 'useContext',
-    'useReducer', 'useLayoutEffect', 'useImperativeHandle', 'useDebugValue',
-    'createElement', 'createContext', 'createRef', 'forwardRef', 'memo', 'lazy',
-    // Common array/object methods
-    'map', 'filter', 'reduce', 'forEach', 'find', 'findIndex', 'some', 'every',
-    'includes', 'indexOf', 'slice', 'splice', 'concat', 'join', 'split',
-    'push', 'pop', 'shift', 'unshift', 'sort', 'reverse',
-    'keys', 'values', 'entries', 'assign', 'freeze', 'seal',
-    'hasOwnProperty', 'toString', 'valueOf',
-    // Python built-ins
-    'print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'tuple',
-    'open', 'read', 'write', 'close', 'append', 'extend', 'update',
-    'super', 'type', 'isinstance', 'issubclass', 'getattr', 'setattr', 'hasattr',
-    'enumerate', 'zip', 'sorted', 'reversed', 'min', 'max', 'sum', 'abs',
-    // Ruby built-ins and Kernel methods
-    'puts', 'print', 'p', 'pp', 'warn', 'raise', 'fail',
-    'require', 'require_relative', 'load', 'autoload',
-    'include', 'extend', 'prepend',
-    'attr_accessor', 'attr_reader', 'attr_writer',
-    'public', 'private', 'protected', 'module_function',
-    'lambda', 'proc', 'block_given?',
-    'nil?', 'is_a?', 'kind_of?', 'instance_of?', 'respond_to?',
-    'freeze', 'frozen?', 'dup', 'clone', 'tap', 'then', 'yield_self',
-    // Ruby enumerables
-    'each', 'map', 'select', 'reject', 'find', 'detect', 'collect',
-    'inject', 'reduce', 'flat_map', 'each_with_object', 'each_with_index',
-    'any?', 'all?', 'none?', 'count', 'first', 'last',
-    'sort', 'sort_by', 'min', 'max', 'min_by', 'max_by',
-    'group_by', 'partition', 'zip', 'compact', 'flatten', 'uniq',
-  ]);
+/** Pre-built set (module-level singleton) to avoid re-creating per call */
+const BUILT_IN_NAMES = new Set([
+  // JavaScript/TypeScript built-ins
+  'console', 'log', 'warn', 'error', 'info', 'debug',
+  'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
+  'parseInt', 'parseFloat', 'isNaN', 'isFinite',
+  'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent',
+  'JSON', 'parse', 'stringify',
+  'Object', 'Array', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt',
+  'Map', 'Set', 'WeakMap', 'WeakSet',
+  'Promise', 'resolve', 'reject', 'then', 'catch', 'finally',
+  'Math', 'Date', 'RegExp', 'Error',
+  'require', 'import', 'export',
+  'fetch', 'Response', 'Request',
+  // React hooks and common functions
+  'useState', 'useEffect', 'useCallback', 'useMemo', 'useRef', 'useContext',
+  'useReducer', 'useLayoutEffect', 'useImperativeHandle', 'useDebugValue',
+  'createElement', 'createContext', 'createRef', 'forwardRef', 'memo', 'lazy',
+  // Common array/object methods
+  'map', 'filter', 'reduce', 'forEach', 'find', 'findIndex', 'some', 'every',
+  'includes', 'indexOf', 'slice', 'splice', 'concat', 'join', 'split',
+  'push', 'pop', 'shift', 'unshift', 'sort', 'reverse',
+  'keys', 'values', 'entries', 'assign', 'freeze', 'seal',
+  'hasOwnProperty', 'toString', 'valueOf',
+  // Python built-ins
+  'print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'tuple',
+  'open', 'read', 'write', 'close', 'append', 'extend', 'update',
+  'super', 'type', 'isinstance', 'issubclass', 'getattr', 'setattr', 'hasattr',
+  'enumerate', 'zip', 'sorted', 'reversed', 'min', 'max', 'sum', 'abs',
+  // C/C++ standard library and common kernel helpers
+  'printf', 'fprintf', 'sprintf', 'snprintf', 'vprintf', 'vfprintf', 'vsprintf', 'vsnprintf',
+  'scanf', 'fscanf', 'sscanf',
+  'malloc', 'calloc', 'realloc', 'free', 'memcpy', 'memmove', 'memset', 'memcmp',
+  'strlen', 'strcpy', 'strncpy', 'strcat', 'strncat', 'strcmp', 'strncmp', 'strstr', 'strchr', 'strrchr',
+  'atoi', 'atol', 'atof', 'strtol', 'strtoul', 'strtoll', 'strtoull', 'strtod',
+  'sizeof', 'offsetof', 'typeof',
+  'assert', 'abort', 'exit', '_exit',
+  'fopen', 'fclose', 'fread', 'fwrite', 'fseek', 'ftell', 'rewind', 'fflush', 'fgets', 'fputs',
+  // Linux kernel common macros/helpers (not real call targets)
+  'likely', 'unlikely', 'BUG', 'BUG_ON', 'WARN', 'WARN_ON', 'WARN_ONCE',
+  'IS_ERR', 'PTR_ERR', 'ERR_PTR', 'IS_ERR_OR_NULL',
+  'ARRAY_SIZE', 'container_of', 'list_for_each_entry', 'list_for_each_entry_safe',
+  'min', 'max', 'clamp', 'abs', 'swap',
+  'pr_info', 'pr_warn', 'pr_err', 'pr_debug', 'pr_notice', 'pr_crit', 'pr_emerg',
+  'printk', 'dev_info', 'dev_warn', 'dev_err', 'dev_dbg',
+  'GFP_KERNEL', 'GFP_ATOMIC',
+  'spin_lock', 'spin_unlock', 'spin_lock_irqsave', 'spin_unlock_irqrestore',
+  'mutex_lock', 'mutex_unlock', 'mutex_init',
+  'kfree', 'kmalloc', 'kzalloc', 'kcalloc', 'krealloc', 'kvmalloc', 'kvfree',
+  'get', 'put',
+  // Ruby built-ins and Kernel methods
+  'puts', 'print', 'p', 'pp', 'warn', 'raise', 'fail',
+  'require', 'require_relative', 'load', 'autoload',
+  'include', 'extend', 'prepend',
+  'attr_accessor', 'attr_reader', 'attr_writer',
+  'public', 'private', 'protected', 'module_function',
+  'lambda', 'proc', 'block_given?',
+  'nil?', 'is_a?', 'kind_of?', 'instance_of?', 'respond_to?',
+  'freeze', 'frozen?', 'dup', 'clone', 'tap', 'then', 'yield_self',
+  // Ruby enumerables
+  'each', 'map', 'select', 'reject', 'find', 'detect', 'collect',
+  'inject', 'reduce', 'flat_map', 'each_with_object', 'each_with_index',
+  'any?', 'all?', 'none?', 'count', 'first', 'last',
+  'sort', 'sort_by', 'min', 'max', 'min_by', 'max_by',
+  'group_by', 'partition', 'zip', 'compact', 'flatten', 'uniq',
+]);
 
-  return builtIns.has(name);
-};
+const isBuiltInOrNoise = (name: string): boolean => BUILT_IN_NAMES.has(name);
 

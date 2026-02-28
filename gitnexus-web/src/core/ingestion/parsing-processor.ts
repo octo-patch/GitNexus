@@ -14,7 +14,7 @@ export type FileProgressCallback = (current: number, total: number, filePath: st
 
 /**
  * Check if a symbol (function, class, etc.) is exported/public
- * Handles all 9 supported languages with explicit logic
+ * Handles all 11 supported languages with explicit logic
  * 
  * @param node - The AST node for the symbol name
  * @param name - The symbol name
