@@ -10,6 +10,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { glob } from 'glob';
 import { getGlobalDir } from '../storage/repo-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -253,39 +254,38 @@ async function installSkillsTo(targetDir: string): Promise<string[]> {
   const installed: string[] = [];
   const skillsRoot = path.join(__dirname, '..', '..', 'skills');
 
-  let skillNames: string[] = [];
+  let flatFiles: string[] = [];
+  let dirSkillFiles: string[] = [];
   try {
-    const entries = await fs.readdir(skillsRoot, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith('.md')) {
-        skillNames.push(entry.name.replace(/\.md$/, ''));
-      } else if (entry.isDirectory()) {
-        skillNames.push(entry.name);
-      }
-    }
+    [flatFiles, dirSkillFiles] = await Promise.all([
+      glob('*.md', { cwd: skillsRoot }),
+      glob('*/SKILL.md', { cwd: skillsRoot }),
+    ]);
   } catch {
     return [];
   }
 
-  for (const skillName of skillNames) {
+  const skillSources = new Map<string, { isDirectory: boolean }>();
+
+  for (const relPath of dirSkillFiles) {
+    skillSources.set(path.dirname(relPath), { isDirectory: true });
+  }
+  for (const relPath of flatFiles) {
+    const skillName = path.basename(relPath, '.md');
+    if (!skillSources.has(skillName)) {
+      skillSources.set(skillName, { isDirectory: false });
+    }
+  }
+
+  for (const [skillName, source] of skillSources) {
     const skillDir = path.join(targetDir, skillName);
 
     try {
-      // Try directory-based skill first (skills/{name}/SKILL.md)
-      const dirSource = path.join(skillsRoot, skillName);
-      const dirSkillFile = path.join(dirSource, 'SKILL.md');
-
-      let isDirectory = false;
-      try {
-        const stat = await fs.stat(dirSource);
-        isDirectory = stat.isDirectory();
-      } catch { /* not a directory */ }
-
-      if (isDirectory) {
+      if (source.isDirectory) {
+        const dirSource = path.join(skillsRoot, skillName);
         await copyDirRecursive(dirSource, skillDir);
         installed.push(skillName);
       } else {
-        // Fall back to flat file (skills/{name}.md)
         const flatSource = path.join(skillsRoot, `${skillName}.md`);
         const content = await fs.readFile(flatSource, 'utf-8');
         await fs.mkdir(skillDir, { recursive: true });
