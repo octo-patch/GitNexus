@@ -520,6 +520,86 @@ class UserService {
     });
   });
 
+  describe('Ruby YARD annotations', () => {
+    it('extracts @param type bindings from YARD comments', () => {
+      const tree = parse(`
+class UserService
+  # @param repo [UserRepo] the repository
+  # @param name [String] the user's name
+  def create(repo, name)
+    repo.save
+  end
+end
+`, Ruby);
+      const { env } = buildTypeEnv(tree, 'ruby');
+      expect(flatGet(env, 'repo')).toBe('UserRepo');
+      expect(flatGet(env, 'name')).toBe('String');
+    });
+
+    it('handles qualified YARD types (Models::User → User)', () => {
+      const tree = parse(`
+# @param user [Models::User] the user
+def process(user)
+end
+`, Ruby);
+      const { env } = buildTypeEnv(tree, 'ruby');
+      expect(flatGet(env, 'user')).toBe('User');
+    });
+
+    it('handles nullable YARD types (String, nil → String)', () => {
+      const tree = parse(`
+# @param name [String, nil] optional name
+def greet(name)
+end
+`, Ruby);
+      const { env } = buildTypeEnv(tree, 'ruby');
+      expect(flatGet(env, 'name')).toBe('String');
+    });
+
+    it('skips ambiguous union YARD types (String, Integer → undefined)', () => {
+      const tree = parse(`
+# @param value [String, Integer] mixed type
+def process(value)
+end
+`, Ruby);
+      const { env } = buildTypeEnv(tree, 'ruby');
+      expect(flatGet(env, 'value')).toBeUndefined();
+    });
+
+    it('extracts no types when no YARD comments present', () => {
+      const tree = parse(`
+def create(repo, name)
+  repo.save
+end
+`, Ruby);
+      const { env } = buildTypeEnv(tree, 'ruby');
+      expect(flatSize(env)).toBe(0);
+    });
+
+    it('extracts types from singleton method YARD comments', () => {
+      const tree = parse(`
+class UserService
+  # @param name [String] the user's name
+  def self.find(name)
+    name
+  end
+end
+`, Ruby);
+      const { env } = buildTypeEnv(tree, 'ruby');
+      expect(flatGet(env, 'name')).toBe('String');
+    });
+
+    it('handles generic YARD types (Array<User> → Array)', () => {
+      const tree = parse(`
+# @param users [Array<User>] list of users
+def process(users)
+end
+`, Ruby);
+      const { env } = buildTypeEnv(tree, 'ruby');
+      expect(flatGet(env, 'users')).toBe('Array');
+    });
+  });
+
   describe('super/base/parent resolution', () => {
     it('resolves super to parent class name (TypeScript)', () => {
       const code = `

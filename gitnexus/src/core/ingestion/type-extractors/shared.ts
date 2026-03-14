@@ -122,6 +122,66 @@ export const TYPED_PARAMETER_TYPES = new Set([
   'property_promotion_parameter', // PHP 8.0+ constructor promotion: __construct(private Foo $x)
 ]);
 
+/**
+ * Extract type arguments from a generic type node.
+ * e.g., List<User, String> → ['User', 'String'], Vec<User> → ['User']
+ *
+ * Handles language-specific AST structures:
+ * - TS/Java/Rust/Go: generic_type > type_arguments > type nodes
+ * - C#:              generic_type > type_argument_list > type nodes
+ * - Kotlin:          generic_type > type_arguments > type_projection > type nodes
+ *
+ * Note: Go slices/maps use slice_type/map_type, not generic_type — those are
+ * NOT handled here. Use language-specific extractors for Go container types.
+ *
+ * @param typeNode A generic_type or parameterized_type AST node (or any node —
+ *   returns [] for non-generic types).
+ * @returns Array of resolved type argument names. Unresolvable arguments are omitted.
+ */
+export const extractGenericTypeArgs = (typeNode: SyntaxNode): string[] => {
+  // Unwrap wrapper nodes that may sit above the generic_type
+  if (typeNode.type === 'type_annotation' || typeNode.type === 'type'
+    || typeNode.type === 'user_type' || typeNode.type === 'nullable_type'
+    || typeNode.type === 'optional_type') {
+    const inner = typeNode.firstNamedChild;
+    if (inner) return extractGenericTypeArgs(inner);
+    return [];
+  }
+
+  // Only process generic/parameterized type nodes
+  if (typeNode.type !== 'generic_type' && typeNode.type !== 'parameterized_type') {
+    return [];
+  }
+
+  // Find the type_arguments / type_argument_list child
+  let argsNode: SyntaxNode | null = null;
+  for (let i = 0; i < typeNode.namedChildCount; i++) {
+    const child = typeNode.namedChild(i);
+    if (child && (child.type === 'type_arguments' || child.type === 'type_argument_list')) {
+      argsNode = child;
+      break;
+    }
+  }
+  if (!argsNode) return [];
+
+  const result: string[] = [];
+  for (let i = 0; i < argsNode.namedChildCount; i++) {
+    let argNode = argsNode.namedChild(i);
+    if (!argNode) continue;
+
+    // Kotlin: type_arguments > type_projection > user_type > type_identifier
+    if (argNode.type === 'type_projection') {
+      argNode = argNode.firstNamedChild;
+      if (!argNode) continue;
+    }
+
+    const name = extractSimpleTypeName(argNode);
+    if (name) result.push(name);
+  }
+
+  return result;
+};
+
 /** Find the first named child with the given node type */
 export const findChildByType = (node: SyntaxNode, type: string): SyntaxNode | null => {
   for (let i = 0; i < node.namedChildCount; i++) {

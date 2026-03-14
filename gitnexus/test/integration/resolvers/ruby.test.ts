@@ -505,3 +505,46 @@ describe('Ruby constant constructor binding resolution', () => {
     expect(validateCall).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// YARD annotation type resolution: @param repo [UserRepo] → repo.save resolves
+// ---------------------------------------------------------------------------
+
+describe('Ruby YARD annotation type resolution', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'ruby-yard-annotations'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects UserRepo, User, and UserService classes', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('UserRepo');
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+  });
+
+  it('detects save, find_by_name, greet, and create methods', () => {
+    const methods = getNodesByLabel(result, 'Method');
+    expect(methods).toContain('save');
+    expect(methods).toContain('find_by_name');
+    expect(methods).toContain('greet');
+    expect(methods).toContain('create');
+  });
+
+  it('resolves repo.save to UserRepo#save via YARD @param annotation', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c => c.target === 'save' && c.source === 'create');
+    expect(saveCall).toBeDefined();
+    expect(saveCall!.targetFilePath).toContain('models.rb');
+  });
+
+  it('resolves user.greet to User#greet via YARD @param annotation', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const greetCall = calls.find(c => c.target === 'greet' && c.source === 'create');
+    expect(greetCall).toBeDefined();
+    expect(greetCall!.targetFilePath).toContain('models.rb');
+  });
+});

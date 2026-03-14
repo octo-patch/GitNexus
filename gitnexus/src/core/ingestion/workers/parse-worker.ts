@@ -79,6 +79,7 @@ interface ParsedSymbol {
   nodeId: string;
   type: string;
   parameterCount?: number;
+  returnType?: string;
   ownerId?: string;
 }
 
@@ -1078,6 +1079,7 @@ const processFileGroup = (
         nodeId,
         type: nodeLabel,
         ...(parameterCount !== undefined ? { parameterCount } : {}),
+        ...(returnType !== undefined ? { returnType } : {}),
         ...(enclosingClassId ? { ownerId: enclosingClassId } : {}),
       });
 

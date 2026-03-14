@@ -343,6 +343,85 @@ const resolveCallTarget = (
   return toResolveResult(filteredCandidates[0], tiered.tier);
 };
 
+// ── Return type text helpers ─────────────────────────────────────────────
+// extractSimpleTypeName works on AST nodes; this operates on raw return-type
+// text already stored in SymbolDefinition (e.g. "User", "Promise<User>",
+// "User | null", "*User").  Extracts the base user-defined type name.
+
+/** Primitive / built-in types that should NOT produce a receiver binding. */
+const PRIMITIVE_TYPES = new Set([
+  'string', 'number', 'boolean', 'void', 'int', 'float', 'double', 'long',
+  'short', 'byte', 'char', 'bool', 'str', 'i8', 'i16', 'i32', 'i64',
+  'u8', 'u16', 'u32', 'u64', 'f32', 'f64', 'usize', 'isize',
+  'undefined', 'null', 'None', 'nil',
+]);
+
+/**
+ * Extract a simple type name from raw return-type text.
+ * Handles common patterns:
+ *   "User"                → "User"
+ *   "Promise<User>"       → "User"   (unwrap wrapper generics)
+ *   "Option<User>"        → "User"
+ *   "Result<User, Error>" → "User"   (first type arg)
+ *   "User | null"         → "User"   (strip nullable union)
+ *   "User?"               → "User"   (strip nullable suffix)
+ *   "*User"               → "User"   (Go pointer)
+ *   "&User"               → "User"   (Rust reference)
+ * Returns undefined for complex types or primitives.
+ */
+const WRAPPER_GENERICS = new Set([
+  'Promise', 'Observable', 'Option', 'Some', 'Result',
+  'Optional', 'Future', 'Task', 'ValueTask',
+  'List', 'Array', 'Vec', 'Set', 'Iterable',
+  'Sequence', 'MutableList', 'ArrayList',
+]);
+
+export const extractReturnTypeName = (raw: string): string | undefined => {
+  let text = raw.trim();
+  if (!text) return undefined;
+
+  // Strip pointer/reference prefixes: *User, &User, &mut User
+  text = text.replace(/^[&*]+\s*(mut\s+)?/, '');
+
+  // Strip nullable suffix: User?
+  text = text.replace(/\?$/, '');
+
+  // Handle union types: "User | null" → "User"
+  if (text.includes('|')) {
+    const parts = text.split('|').map(p => p.trim()).filter(p =>
+      p !== 'null' && p !== 'undefined' && p !== 'void' && p !== 'None' && p !== 'nil'
+    );
+    if (parts.length === 1) text = parts[0];
+    else return undefined; // genuine union — too complex
+  }
+
+  // Handle generics: Promise<User> → unwrap if wrapper, else take base
+  const genericMatch = text.match(/^(\w+)\s*<(.+)>$/);
+  if (genericMatch) {
+    const [, base, args] = genericMatch;
+    if (WRAPPER_GENERICS.has(base)) {
+      // Take the first type argument (e.g., Result<User, Error> → User)
+      const firstArg = args.split(',')[0].trim();
+      return extractReturnTypeName(firstArg);
+    }
+    // Non-wrapper generic: return the base type (e.g., Map<K,V> → Map)
+    return PRIMITIVE_TYPES.has(base.toLowerCase()) ? undefined : base;
+  }
+
+  // Handle qualified names: models.User → User, com.example.User → User
+  if (text.includes('.')) {
+    text = text.split('.').pop()!;
+  }
+
+  // Final check: skip primitives
+  if (PRIMITIVE_TYPES.has(text) || PRIMITIVE_TYPES.has(text.toLowerCase())) return undefined;
+
+  // Must start with uppercase (class/type convention) or be a valid identifier
+  if (!/^[A-Z_]\w*$/.test(text)) return undefined;
+
+  return text;
+};
+
 // ── Scope key helpers ────────────────────────────────────────────────────
 // Scope keys use the format "funcName@startIndex" (produced by type-env.ts).
 // Source IDs use "Label:filepath:funcName" (produced by parse-worker.ts).
@@ -386,6 +465,19 @@ export const processCallsFromExtracted = async (
         if (isClass) {
           if (!fileReceiverTypes.has(filePath)) fileReceiverTypes.set(filePath, new Map());
           fileReceiverTypes.get(filePath)!.set(receiverKey(extractFuncNameFromScope(scope), varName), calleeName);
+        } else {
+          // Return type inference: if the callee is a function/method with a known
+          // return type, bind the variable to that return type.
+          const callableDefs = tiered?.candidates.filter(d =>
+            d.type === 'Function' || d.type === 'Method'
+          );
+          if (callableDefs && callableDefs.length === 1 && callableDefs[0].returnType) {
+            const typeName = extractReturnTypeName(callableDefs[0].returnType);
+            if (typeName) {
+              if (!fileReceiverTypes.has(filePath)) fileReceiverTypes.set(filePath, new Map());
+              fileReceiverTypes.get(filePath)!.set(receiverKey(extractFuncNameFromScope(scope), varName), typeName);
+            }
+          }
         }
       }
     }
