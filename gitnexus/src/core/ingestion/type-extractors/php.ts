@@ -1,10 +1,12 @@
 import type { SyntaxNode } from '../utils.js';
-import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup, ConstructorBindingScanner } from './types.js';
+import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup, ConstructorBindingScanner, ReturnTypeExtractor } from './types.js';
 import { extractSimpleTypeName, extractVarName, extractCalleeName } from './shared.js';
 
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
-  'assignment_expression', // For constructor inference: $x = new User()
-  'property_declaration',  // PHP 7.4+ typed properties: private UserRepo $repo;
+  'assignment_expression',   // For constructor inference: $x = new User()
+  'property_declaration',    // PHP 7.4+ typed properties: private UserRepo $repo;
+  'method_declaration',      // PHPDoc @param on class methods
+  'function_definition',     // PHPDoc @param on top-level functions
 ]);
 
 /** Walk up the AST to find the enclosing class declaration. */
@@ -45,8 +47,73 @@ const resolvePhpKeyword = (keyword: string, node: SyntaxNode): string | undefine
   return undefined;
 };
 
-/** PHP: typed class properties (PHP 7.4+): private UserRepo $repo; */
+const normalizePhpType = (raw: string): string | undefined => {
+  // Strip nullable prefix: ?User → User
+  let type = raw.startsWith('?') ? raw.slice(1) : raw;
+  // Strip array suffix: User[] → User
+  type = type.replace(/\[\]$/, '');
+  // Strip union with null/false/void: User|null → User
+  const parts = type.split('|').filter(p => p !== 'null' && p !== 'false' && p !== 'void' && p !== 'mixed');
+  if (parts.length !== 1) return undefined;
+  type = parts[0];
+  // Strip namespace: \App\Models\User → User
+  const segments = type.split('\\');
+  type = segments[segments.length - 1];
+  // Skip uninformative types
+  if (type === 'mixed' || type === 'void' || type === 'self' || type === 'static' || type === 'object') return undefined;
+  if (/^\w+$/.test(type)) return type;
+  return undefined;
+};
+
+/** Regex to extract PHPDoc @param annotations: `@param Type $name` */
+const PHPDOC_PARAM_RE = /@param\s+(\S+)\s+\$(\w+)/g;
+
+/**
+ * Collect PHPDoc @param type bindings from comment nodes preceding a method/function.
+ * Returns a map of paramName → typeName (without $ prefix).
+ */
+const collectPhpDocParams = (methodNode: SyntaxNode): Map<string, string> => {
+  const commentTexts: string[] = [];
+  let sibling = methodNode.previousSibling;
+  while (sibling) {
+    if (sibling.type === 'comment') {
+      commentTexts.unshift(sibling.text);
+    } else if (sibling.isNamed) {
+      break;
+    }
+    sibling = sibling.previousSibling;
+  }
+  if (commentTexts.length === 0) return new Map();
+
+  const params = new Map<string, string>();
+  const commentBlock = commentTexts.join('\n');
+  PHPDOC_PARAM_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PHPDOC_PARAM_RE.exec(commentBlock)) !== null) {
+    const typeName = normalizePhpType(match[1]);
+    const paramName = match[2]; // without $ prefix
+    if (typeName) {
+      // Store with $ prefix to match how PHP variables appear in the env
+      params.set('$' + paramName, typeName);
+    }
+  }
+  return params;
+};
+
+/**
+ * PHP: typed class properties (PHP 7.4+): private UserRepo $repo;
+ * Also: PHPDoc @param annotations on method/function definitions.
+ */
 const extractDeclaration: TypeBindingExtractor = (node: SyntaxNode, env: Map<string, string>): void => {
+  // PHPDoc @param on methods/functions — pre-populate env with param types
+  if (node.type === 'method_declaration' || node.type === 'function_definition') {
+    const phpDocParams = collectPhpDocParams(node);
+    for (const [paramName, typeName] of phpDocParams) {
+      if (!env.has(paramName)) env.set(paramName, typeName);
+    }
+    return;
+  }
+
   if (node.type !== 'property_declaration') return;
 
   const typeNode = node.childForFieldName('type');
@@ -133,10 +200,30 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
   return undefined;
 };
 
+/** Regex to extract PHPDoc @return annotations: `@return User` */
+const PHPDOC_RETURN_RE = /@return\s+(\S+)/;
+
+/**
+ * Extract return type from PHPDoc `@return Type` annotation preceding a method.
+ * Walks backwards through preceding siblings looking for comment nodes.
+ */
+const extractReturnType: ReturnTypeExtractor = (node) => {
+  let sibling = node.previousSibling;
+  while (sibling) {
+    if (sibling.type === 'comment') {
+      const match = PHPDOC_RETURN_RE.exec(sibling.text);
+      if (match) return normalizePhpType(match[1]);
+    } else if (sibling.isNamed) break;
+    sibling = sibling.previousSibling;
+  }
+  return undefined;
+};
+
 export const typeConfig: LanguageTypeConfig = {
   declarationNodeTypes: DECLARATION_NODE_TYPES,
   extractDeclaration,
   extractParameter,
   extractInitializer,
   scanConstructorBinding,
+  extractReturnType,
 };

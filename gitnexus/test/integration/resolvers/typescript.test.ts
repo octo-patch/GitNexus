@@ -893,3 +893,55 @@ describe('TypeScript return type inference via explicit function return type', (
   });
 });
 
+// ---------------------------------------------------------------------------
+// JavaScript return type inference via JSDoc @returns annotation
+// ---------------------------------------------------------------------------
+
+describe('JavaScript return type inference via JSDoc @returns annotation', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'js-jsdoc-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User and Repo classes with save methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Class')).toContain('Repo');
+  });
+
+  it('resolves user.save() to User#save via JSDoc @returns {User}', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('models.js'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves repo.save() to Repo#save via JSDoc @returns {Repo}', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('models.js'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves user.save() via JSDoc @param {User} in handleUser()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleUser' && c.targetFilePath.includes('models.js'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves repo.save() via JSDoc @param {Repo} in handleRepo()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleRepo' && c.targetFilePath.includes('models.js'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});
+

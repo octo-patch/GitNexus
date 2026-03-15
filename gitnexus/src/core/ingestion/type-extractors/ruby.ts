@@ -1,5 +1,5 @@
-import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup } from './types.js';
-import { extractRubyConstructorAssignment } from './shared.js';
+import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup, ConstructorBindingScanner, ReturnTypeExtractor } from './types.js';
+import { extractRubyConstructorAssignment, extractSimpleTypeName } from './shared.js';
 import { SyntaxNode } from '../utils.js';
 
 /**
@@ -25,6 +25,9 @@ import { SyntaxNode } from '../utils.js';
 
 /** Regex to extract @param annotations: `@param name [Type]` */
 const YARD_PARAM_RE = /@param\s+(\w+)\s+\[([^\]]+)\]/g;
+
+/** Regex to extract @return annotations: `@return [Type]` */
+const YARD_RETURN_RE = /@return\s+\[([^\]]+)\]/;
 
 /**
  * Extract the simple type name from a YARD type string.
@@ -178,10 +181,65 @@ const extractInitializer: InitializerExtractor = (node, env, classNames): void =
   }
 };
 
+/**
+ * Extract return type from YARD `@return [Type]` annotation preceding a method.
+ * Reuses the same comment-walking strategy as collectYardParams: try direct
+ * siblings first, fall back to parent (body_statement) siblings for class methods.
+ */
+const extractReturnType: ReturnTypeExtractor = (node) => {
+  const search = (startNode: SyntaxNode): string | undefined => {
+    let sibling = startNode.previousSibling;
+    while (sibling) {
+      if (sibling.type === 'comment') {
+        const match = YARD_RETURN_RE.exec(sibling.text);
+        if (match) return extractYardTypeName(match[1]);
+      } else if (sibling.isNamed) {
+        break;
+      }
+      sibling = sibling.previousSibling;
+    }
+    return undefined;
+  };
+
+  const result = search(node);
+  if (result) return result;
+
+  if (node.parent?.type === 'body_statement') {
+    return search(node.parent);
+  }
+  return undefined;
+};
+
+/**
+ * Ruby constructor binding scanner: captures both `user = User.new` and
+ * plain call assignments like `user = get_user()`.
+ * The `.new` pattern returns the class name directly; plain calls return the
+ * callee name for return-type inference via SymbolTable lookup.
+ */
+const scanConstructorBinding: ConstructorBindingScanner = (node) => {
+  // Try the .new pattern first (returns class name directly)
+  const newResult = extractRubyConstructorAssignment(node);
+  if (newResult) return newResult;
+
+  // Plain call assignment: user = get_user() / user = Models.create()
+  if (node.type !== 'assignment') return undefined;
+  const left = node.childForFieldName('left');
+  const right = node.childForFieldName('right');
+  if (!left || !right) return undefined;
+  if (left.type !== 'identifier') return undefined;
+  if (right.type !== 'call') return undefined;
+  const method = right.childForFieldName('method');
+  if (!method) return undefined;
+  const calleeName = extractSimpleTypeName(method);
+  if (!calleeName) return undefined;
+  return { varName: left.text, calleeName };
+};
+
 export const typeConfig: LanguageTypeConfig = {
   declarationNodeTypes: DECLARATION_NODE_TYPES,
   extractDeclaration,
   extractParameter,
   extractInitializer,
-  scanConstructorBinding: extractRubyConstructorAssignment,
+  scanConstructorBinding,
+  extractReturnType,
 };

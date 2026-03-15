@@ -19,11 +19,13 @@ export const extractSimpleTypeName = (typeNode: SyntaxNode): string | undefined 
     || typeNode.type === 'qualified_type'
     || typeNode.type === 'member_expression' || typeNode.type === 'member_access_expression'
     || typeNode.type === 'attribute'
-    || typeNode.type === 'scope_resolution') {
+    || typeNode.type === 'scope_resolution'
+    || typeNode.type === 'selector_expression') {
     const last = typeNode.lastNamedChild;
     if (last && (last.type === 'type_identifier' || last.type === 'identifier'
       || last.type === 'simple_identifier' || last.type === 'name'
-      || last.type === 'constant' || last.type === 'property_identifier')) {
+      || last.type === 'constant' || last.type === 'property_identifier'
+      || last.type === 'field_identifier')) {
       return last.text;
     }
   }

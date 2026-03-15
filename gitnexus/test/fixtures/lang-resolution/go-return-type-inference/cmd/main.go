@@ -10,3 +10,9 @@ func processUser() {
 	user := GetUser("alice")
 	user.Save()
 }
+
+// Cross-package factory call: models.NewUser() uses selector_expression in the AST
+func processUserCrossPackage() {
+	user := models.NewUser("bob")
+	user.Save()
+}

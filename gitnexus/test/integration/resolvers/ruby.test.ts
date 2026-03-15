@@ -590,9 +590,11 @@ describe('Ruby namespaced constructor resolution (Models::UserService.new)', () 
 
 // ---------------------------------------------------------------------------
 // Return type inference: user = get_user('alice'); user.save
-// Ruby's CONSTRUCTOR_BINDING_SCANNER captures assignment nodes with
-// User.new calls. For plain function calls like get_user(), inference
-// works via the scanner + SymbolTable return type lookup.
+// Ruby's scanConstructorBinding captures assignment nodes with call RHS.
+// Combined with YARD @return annotation parsing, the pipeline resolves
+// `user.save` to User#save (not Repo#save) via return type disambiguation.
+// The fixture has BOTH User#save and Repo#save — fuzzy matching alone
+// cannot disambiguate, so return type inference must be working.
 // ---------------------------------------------------------------------------
 
 describe('Ruby return type inference via function call', () => {
@@ -605,20 +607,36 @@ describe('Ruby return type inference via function call', () => {
     );
   }, 60000);
 
-  it('detects User class and get_user method', () => {
+  it('detects User and Repo classes', () => {
     expect(getNodesByLabel(result, 'Class')).toContain('User');
-    // Ruby `def` is always captured as definition.method (Method label)
+    expect(getNodesByLabel(result, 'Class')).toContain('Repo');
+  });
+
+  it('detects get_user and get_repo methods', () => {
     expect(getNodesByLabel(result, 'Method')).toContain('get_user');
+    expect(getNodesByLabel(result, 'Method')).toContain('get_repo');
   });
 
-  it('detects save method on User', () => {
-    expect(getNodesByLabel(result, 'Method')).toContain('save');
+  it('detects save method on both User and Repo (disambiguation required)', () => {
+    const methods = getNodesByLabel(result, 'Method');
+    // Both classes have save — fuzzy match alone cannot resolve this
+    expect(methods.filter(m => m === 'save').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('resolves user.save to User#save via return type of get_user()', () => {
+  it('resolves user.save to User#save via YARD @return [User] on get_user()', () => {
+    // With both User#save and Repo#save in scope, resolving user.save
+    // requires return type inference: get_user() → @return [User] → user is User
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
       c.target === 'save' && c.source === 'process_user' && c.targetFilePath.includes('models.rb'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves repo.save to Repo#save via YARD @return [Repo] on get_repo()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'process_repo' && c.targetFilePath.includes('repo.rb'),
     );
     expect(saveCall).toBeDefined();
   });

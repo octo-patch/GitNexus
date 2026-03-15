@@ -582,4 +582,15 @@ describe('Go return type inference via explicit function return type', () => {
     const saveCall = calls.find(c => c.target === 'Save' && c.targetFilePath.includes('models'));
     expect(saveCall).toBeDefined();
   });
+
+  it('resolves user.Save() via cross-package factory call models.NewUser()', () => {
+    // Go package-qualified calls use `selector_expression` in the AST.
+    // extractSimpleTypeName must handle selector_expression + field_identifier
+    // to extract "NewUser" from `models.NewUser()`.
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'Save' && c.source === 'processUserCrossPackage' && c.targetFilePath.includes('models')
+    );
+    expect(saveCall).toBeDefined();
+  });
 });

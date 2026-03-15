@@ -740,3 +740,55 @@ describe('PHP return type inference via member call', () => {
     expect(repoSave).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// PHPDoc @return annotation: return type inference without native type hints
+// ---------------------------------------------------------------------------
+
+describe('PHP return type inference via PHPDoc @return annotation', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'php-phpdoc-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User and Repo classes with save methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Class')).toContain('Repo');
+  });
+
+  it('resolves $user->save() to User#save via PHPDoc @return User', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves $repo->save() to Repo#save via PHPDoc @return Repo', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves $user->save() via PHPDoc @param User $user in handleUser()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleUser' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves $repo->save() via PHPDoc @param Repo $repo in handleRepo()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleRepo' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

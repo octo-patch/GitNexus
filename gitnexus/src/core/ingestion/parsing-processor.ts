@@ -8,6 +8,7 @@ import { ASTCache } from './ast-cache.js';
 import { getLanguageFromFilename, yieldToEventLoop, DEFINITION_CAPTURE_KEYS, getDefinitionNodeFromCaptures, findEnclosingClassId, extractMethodSignature } from './utils.js';
 import { isNodeExported } from './export-detection.js';
 import { detectFrameworkFromAST } from './framework-detection.js';
+import { typeConfigs } from './type-extractors/index.js';
 import { WorkerPool } from './workers/worker-pool.js';
 import type { ParseWorkerResult, ParseWorkerInput, ExtractedImport, ExtractedCall, ExtractedHeritage, ExtractedRoute, FileConstructorBindings } from './workers/parse-worker.js';
 import { getTreeSitterBufferSize, TREE_SITTER_MAX_BUFFER } from './constants.js';
@@ -214,6 +215,14 @@ const processParsingSequential = async (
       const methodSig = (nodeLabel === 'Function' || nodeLabel === 'Method' || nodeLabel === 'Constructor')
         ? extractMethodSignature(definitionNode)
         : undefined;
+
+      // Language-specific return type fallback (e.g. Ruby YARD @return [Type])
+      if (methodSig && !methodSig.returnType && definitionNode) {
+        const tc = typeConfigs[language as keyof typeof typeConfigs];
+        if (tc?.extractReturnType) {
+          methodSig.returnType = tc.extractReturnType(definitionNode);
+        }
+      }
 
       const node: GraphNode = {
         id: nodeId,

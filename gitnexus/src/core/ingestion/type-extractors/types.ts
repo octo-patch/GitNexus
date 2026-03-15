@@ -17,6 +17,11 @@ export type InitializerExtractor = (node: SyntaxNode, env: Map<string, string>, 
  *  Returns { varName, calleeName } if the node matches, undefined otherwise. */
 export type ConstructorBindingScanner = (node: SyntaxNode) => { varName: string; calleeName: string } | undefined;
 
+/** Extracts a return type string from a method/function definition node.
+ *  Used for languages where return types are expressed in comments (e.g. YARD @return [Type])
+ *  rather than in AST fields. Returns undefined if no return type can be determined. */
+export type ReturnTypeExtractor = (node: SyntaxNode) => string | undefined;
+
 /** Per-language type extraction configuration */
 export interface LanguageTypeConfig {
   /** Node types that represent typed declarations for this language */
@@ -34,4 +39,7 @@ export interface LanguageTypeConfig {
    *  Called on every AST node during buildTypeEnv walk; returns undefined for non-matches.
    *  The callee binding is unverified — the caller must confirm against the SymbolTable. */
   scanConstructorBinding?: ConstructorBindingScanner;
+  /** Extract return type from comment-based annotations (e.g. YARD @return [Type]).
+   *  Called as fallback when extractMethodSignature finds no AST-based return type. */
+  extractReturnType?: ReturnTypeExtractor;
 }
