@@ -945,3 +945,40 @@ describe('JavaScript return type inference via JSDoc @returns annotation', () =>
   });
 });
 
+// ---------------------------------------------------------------------------
+// JavaScript async return type inference via JSDoc @returns {Promise<User>}
+// Verifies that wrapper generics (Promise) are unwrapped to the inner type.
+// ---------------------------------------------------------------------------
+
+describe('JavaScript async return type inference via JSDoc @returns {Promise<User>}', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'js-jsdoc-async-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User and Repo classes with save methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Class')).toContain('Repo');
+  });
+
+  it('resolves user.save() to User#save via @returns {Promise<User>} unwrapping', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('models.js'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves repo.save() to Repo#save via @returns {Promise<Repo>} unwrapping', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('models.js'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});
+

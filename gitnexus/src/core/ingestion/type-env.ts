@@ -374,6 +374,8 @@ export interface ConstructorBinding {
   varName: string;
   /** Name of the callee (potential class constructor) */
   calleeName: string;
+  /** Enclosing class name when callee is a method on a known receiver (e.g. $this) */
+  receiverClassName?: string;
 }
 
 

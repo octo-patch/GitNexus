@@ -14,8 +14,10 @@ export type ClassNameLookup = { has(name: string): boolean };
 export type InitializerExtractor = (node: SyntaxNode, env: Map<string, string>, classNames: ClassNameLookup) => void;
 
 /** Scans an AST node for untyped `var = callee()` patterns for return-type inference.
- *  Returns { varName, calleeName } if the node matches, undefined otherwise. */
-export type ConstructorBindingScanner = (node: SyntaxNode) => { varName: string; calleeName: string } | undefined;
+ *  Returns { varName, calleeName } if the node matches, undefined otherwise.
+ *  `receiverClassName` — optional hint for method calls on known receivers
+ *  (e.g. $this->getUser() in PHP provides the enclosing class name). */
+export type ConstructorBindingScanner = (node: SyntaxNode) => { varName: string; calleeName: string; receiverClassName?: string } | undefined;
 
 /** Extracts a return type string from a method/function definition node.
  *  Used for languages where return types are expressed in comments (e.g. YARD @return [Type])

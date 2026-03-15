@@ -492,7 +492,7 @@ export const processCallsFromExtracted = async (
   const fileReceiverTypes = new Map<string, Map<string, string>>();
   if (constructorBindings) {
     for (const { filePath, bindings } of constructorBindings) {
-      for (const { scope, varName, calleeName } of bindings) {
+      for (const { scope, varName, calleeName, receiverClassName } of bindings) {
         const tiered = ctx.resolve(calleeName, filePath);
         const isClass = tiered?.candidates.some(def => def.type === 'Class') ?? false;
         if (isClass) {
@@ -501,9 +501,19 @@ export const processCallsFromExtracted = async (
         } else {
           // Return type inference: if the callee is a function/method with a known
           // return type, bind the variable to that return type.
-          const callableDefs = tiered?.candidates.filter(d =>
+          let callableDefs = tiered?.candidates.filter(d =>
             d.type === 'Function' || d.type === 'Method'
           );
+          // When receiver class is known (e.g. $this->method() in PHP), narrow
+          // candidates to methods owned by that class to avoid false disambiguation failures.
+          if (callableDefs && callableDefs.length > 1 && receiverClassName) {
+            const narrowed = callableDefs.filter(d => {
+              if (!d.ownerId) return false;
+              const owner = graph.getNode(d.ownerId);
+              return owner?.properties.name === receiverClassName;
+            });
+            if (narrowed.length > 0) callableDefs = narrowed;
+          }
           if (callableDefs && callableDefs.length === 1 && callableDefs[0].returnType) {
             const typeName = extractReturnTypeName(callableDefs[0].returnType);
             if (typeName) {

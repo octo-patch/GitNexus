@@ -65,6 +65,10 @@ const normalizePhpType = (raw: string): string | undefined => {
   return undefined;
 };
 
+/** Node types to skip when walking backwards to find doc-comments.
+ *  PHP 8+ attributes (#[Route(...)]) appear as named siblings between PHPDoc and method. */
+const SKIP_NODE_TYPES: ReadonlySet<string> = new Set(['attribute_list', 'attribute']);
+
 /** Regex to extract PHPDoc @param annotations: `@param Type $name` */
 const PHPDOC_PARAM_RE = /@param\s+(\S+)\s+\$(\w+)/g;
 
@@ -78,7 +82,7 @@ const collectPhpDocParams = (methodNode: SyntaxNode): Map<string, string> => {
   while (sibling) {
     if (sibling.type === 'comment') {
       commentTexts.unshift(sibling.text);
-    } else if (sibling.isNamed) {
+    } else if (sibling.isNamed && !SKIP_NODE_TYPES.has(sibling.type)) {
       break;
     }
     sibling = sibling.previousSibling;
@@ -195,7 +199,16 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
   if (right.type === 'member_call_expression') {
     const methodName = right.childForFieldName('name');
     if (!methodName) return undefined;
-    return { varName: left.text, calleeName: methodName.text };
+    // When receiver is $this/self/static, qualify with enclosing class for disambiguation
+    const receiver = right.childForFieldName('object');
+    const receiverText = receiver?.text;
+    let receiverClassName: string | undefined;
+    if (receiverText === '$this' || receiverText === 'self' || receiverText === 'static') {
+      const cls = findEnclosingClass(node);
+      const clsName = cls?.childForFieldName('name');
+      if (clsName) receiverClassName = clsName.text;
+    }
+    return { varName: left.text, calleeName: methodName.text, receiverClassName };
   }
   return undefined;
 };
@@ -213,7 +226,7 @@ const extractReturnType: ReturnTypeExtractor = (node) => {
     if (sibling.type === 'comment') {
       const match = PHPDOC_RETURN_RE.exec(sibling.text);
       if (match) return normalizePhpType(match[1]);
-    } else if (sibling.isNamed) break;
+    } else if (sibling.isNamed && !SKIP_NODE_TYPES.has(sibling.type)) break;
     sibling = sibling.previousSibling;
   }
   return undefined;

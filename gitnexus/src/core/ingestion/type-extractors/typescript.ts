@@ -45,7 +45,7 @@ const collectJsDocParams = (funcNode: SyntaxNode): Map<string, string> => {
   while (sibling) {
     if (sibling.type === 'comment') {
       commentTexts.unshift(sibling.text);
-    } else if (sibling.isNamed) {
+    } else if (sibling.isNamed && sibling.type !== 'decorator') {
       break;
     }
     sibling = sibling.previousSibling;
@@ -157,6 +157,27 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
 const JSDOC_RETURN_RE = /@returns?\s*\{([^}]+)\}/;
 
 /**
+ * Minimal sanitization for JSDoc return types — preserves generic wrappers
+ * (e.g. `Promise<User>`) so that extractReturnTypeName in call-processor
+ * can apply WRAPPER_GENERICS unwrapping. Unlike normalizeJsDocType (which
+ * strips generics), this only strips JSDoc-specific syntax markers.
+ */
+const sanitizeReturnType = (raw: string): string | undefined => {
+  let type = raw.trim();
+  // Strip JSDoc nullable/non-nullable prefixes: ?User → User, !User → User
+  if (type.startsWith('?') || type.startsWith('!')) type = type.slice(1);
+  // Strip module: prefix — module:models.User → models.User
+  if (type.startsWith('module:')) type = type.slice(7);
+  // Take last segment of dotted path: models.User → User
+  const dotIdx = type.lastIndexOf('.');
+  if (dotIdx >= 0) type = type.slice(dotIdx + 1);
+  // Reject unions (ambiguous)
+  if (type.includes('|')) return undefined;
+  if (!type) return undefined;
+  return type;
+};
+
+/**
  * Extract return type from JSDoc `@returns {Type}` or `@return {Type}` annotation
  * preceding a function/method definition. Walks backwards through preceding siblings
  * looking for comment nodes containing the annotation.
@@ -166,8 +187,8 @@ const extractReturnType: ReturnTypeExtractor = (node) => {
   while (sibling) {
     if (sibling.type === 'comment') {
       const match = JSDOC_RETURN_RE.exec(sibling.text);
-      if (match) return normalizeJsDocType(match[1]);
-    } else if (sibling.isNamed) break;
+      if (match) return sanitizeReturnType(match[1]);
+    } else if (sibling.isNamed && sibling.type !== 'decorator') break;
     sibling = sibling.previousSibling;
   }
   return undefined;

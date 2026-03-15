@@ -792,3 +792,93 @@ describe('PHP return type inference via PHPDoc @return annotation', () => {
     expect(saveCall).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// PHPDoc @return with PHP 8+ attributes (#[Route]) between doc-comment and method
+// ---------------------------------------------------------------------------
+
+describe('PHP PHPDoc @return with attributes between comment and method', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'php-phpdoc-attribute-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User and Repo classes with save methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Class')).toContain('Repo');
+  });
+
+  it('resolves $user->save() to User#save despite #[Route] attribute between PHPDoc and method', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves $repo->save() to Repo#save despite #[Route] attribute between PHPDoc and method', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves $user->save() via PHPDoc @param despite #[Validate] attribute', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleUser' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves $repo->save() via PHPDoc @param despite #[Validate] attribute', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleRepo' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// $this->method() receiver disambiguation: two classes with same method name
+// ---------------------------------------------------------------------------
+
+describe('PHP $this->method() receiver disambiguation', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'php-this-receiver-disambiguation'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects UserService and AdminService classes, both with getUser methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+    expect(getNodesByLabel(result, 'Class')).toContain('AdminService');
+    const getUserMethods = getNodesByLabel(result, 'Method').filter(m => m === 'getUser');
+    expect(getUserMethods.length).toBe(2);
+  });
+
+  it('resolves $user->save() in UserService to User#save via $this->getUser() disambiguation', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves $repo->save() in AdminService to Repo#save via $this->getUser() disambiguation', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processAdmin' && c.targetFilePath.includes('Models.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});
