@@ -102,9 +102,17 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
     if (receiver?.type === 'simple_identifier' && suffix?.text === 'init') {
       return { varName, calleeName: receiver.text };
     }
-    // General qualified call: service.getUser() → extract method name
+    // General qualified call: service.getUser() → extract method name.
+    // tree-sitter-swift may wrap the identifier in navigation_suffix, so
+    // check both direct simple_identifier and navigation_suffix > simple_identifier.
     if (suffix?.type === 'simple_identifier') {
       return { varName, calleeName: suffix.text };
+    }
+    if (suffix?.type === 'navigation_suffix') {
+      const inner = suffix.lastNamedChild;
+      if (inner?.type === 'simple_identifier') {
+        return { varName, calleeName: inner.text };
+      }
     }
   }
   return undefined;

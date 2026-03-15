@@ -669,6 +669,17 @@ describe('extractReturnTypeName', () => {
     expect(extractReturnTypeName('Mutex<User>')).toBe('Mutex');
   });
 
+  // Rust lifetime parameters in wrapper generics
+  it("skips lifetime in Ref<'_, User> → User", () => {
+    expect(extractReturnTypeName("Ref<'_, User>")).toBe('User');
+  });
+  it("skips lifetime in RefMut<'a, User> → User", () => {
+    expect(extractReturnTypeName("RefMut<'a, User>")).toBe('User');
+  });
+  it("skips lifetime in MutexGuard<'_, User> → User", () => {
+    expect(extractReturnTypeName("MutexGuard<'_, User>")).toBe('User');
+  });
+
   it('returns undefined for lowercase non-class types', () => {
     expect(extractReturnTypeName('error')).toBeUndefined();
   });

@@ -471,6 +471,26 @@ function extractFirstGenericArg(args: string): string {
   return args.trim();
 }
 
+/**
+ * Extract the first non-lifetime type argument from a generic argument string.
+ * Skips Rust lifetime parameters (e.g., `'a`, `'_`) to find the actual type.
+ *   "'_, User"       → "User"
+ *   "'a, User"       → "User"
+ *   "User, Error"    → "User"  (no lifetime — delegates to extractFirstGenericArg)
+ */
+function extractFirstTypeArg(args: string): string {
+  let remaining = args;
+  while (remaining) {
+    const first = extractFirstGenericArg(remaining);
+    if (!first.startsWith("'")) return first;
+    // Skip past this lifetime arg + the comma separator
+    const commaIdx = remaining.indexOf(',', first.length);
+    if (commaIdx < 0) return first; // only lifetimes — fall through
+    remaining = remaining.slice(commaIdx + 1).trim();
+  }
+  return args.trim();
+}
+
 export const extractReturnTypeName = (raw: string): string | undefined => {
   let text = raw.trim();
   if (!text) return undefined;
@@ -495,9 +515,10 @@ export const extractReturnTypeName = (raw: string): string | undefined => {
   if (genericMatch) {
     const [, base, args] = genericMatch;
     if (WRAPPER_GENERICS.has(base)) {
-      // Take the first type argument, using bracket-balanced splitting so that
-      // nested generics like Result<User, Error> are not split at the inner comma.
-      const firstArg = extractFirstGenericArg(args);
+      // Take the first non-lifetime type argument, using bracket-balanced splitting
+      // so that nested generics like Result<User, Error> are not split at the inner
+      // comma. Lifetime parameters (Rust 'a, '_) are skipped.
+      const firstArg = extractFirstTypeArg(args);
       return extractReturnTypeName(firstArg);
     }
     // Non-wrapper generic: return the base type (e.g., Map<K,V> → Map)
