@@ -401,13 +401,30 @@ const PRIMITIVE_TYPES = new Set([
  * Returns undefined for complex types or primitives.
  */
 const WRAPPER_GENERICS = new Set([
-  'Promise', 'Observable', 'Future', 'Task', 'ValueTask',  // async wrappers
-  'Option', 'Some', 'Optional', 'Maybe',                   // nullable wrappers
-  'Result', 'Either',                                       // result wrappers
+  'Promise', 'Observable', 'Future', 'CompletableFuture', 'Task', 'ValueTask',  // async wrappers
+  'Option', 'Some', 'Optional', 'Maybe',                                         // nullable wrappers
+  'Result', 'Either',                                                             // result wrappers
   // Containers (List, Array, Vec, Set, etc.) are intentionally excluded —
   // methods are called on the container, not the element type.
   // Non-wrapper generics return the base type (e.g., List) via the else branch.
 ]);
+
+/**
+ * Extracts the first type argument from a comma-separated generic argument string,
+ * respecting nested angle brackets. For example:
+ *   "Result<User, Error>"  → "Result<User, Error>"  (no top-level comma)
+ *   "User, Error"          → "User"
+ *   "Map<K, V>, string"    → "Map<K, V>"
+ */
+function extractFirstGenericArg(args: string): string {
+  let depth = 0;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '<') depth++;
+    else if (args[i] === '>') depth--;
+    else if (args[i] === ',' && depth === 0) return args.slice(0, i).trim();
+  }
+  return args.trim();
+}
 
 export const extractReturnTypeName = (raw: string): string | undefined => {
   let text = raw.trim();
@@ -433,8 +450,9 @@ export const extractReturnTypeName = (raw: string): string | undefined => {
   if (genericMatch) {
     const [, base, args] = genericMatch;
     if (WRAPPER_GENERICS.has(base)) {
-      // Take the first type argument (e.g., Result<User, Error> → User)
-      const firstArg = args.split(',')[0].trim();
+      // Take the first type argument, using bracket-balanced splitting so that
+      // nested generics like Result<User, Error> are not split at the inner comma.
+      const firstArg = extractFirstGenericArg(args);
       return extractReturnTypeName(firstArg);
     }
     // Non-wrapper generic: return the base type (e.g., Map<K,V> → Map)

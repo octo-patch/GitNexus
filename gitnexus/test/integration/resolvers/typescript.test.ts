@@ -915,33 +915,53 @@ describe('JavaScript return type inference via JSDoc @returns annotation', () =>
   it('resolves user.save() to User#save via JSDoc @returns {User}', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
-      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('models.js'),
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('user.js'),
     );
     expect(saveCall).toBeDefined();
+    // Negative: must NOT resolve to Repo#save
+    const wrongCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('repo.js'),
+    );
+    expect(wrongCall).toBeUndefined();
   });
 
   it('resolves repo.save() to Repo#save via JSDoc @returns {Repo}', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
-      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('models.js'),
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('repo.js'),
     );
     expect(saveCall).toBeDefined();
+    // Negative: must NOT resolve to User#save
+    const wrongCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('user.js'),
+    );
+    expect(wrongCall).toBeUndefined();
   });
 
   it('resolves user.save() via JSDoc @param {User} in handleUser()', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
-      c.target === 'save' && c.source === 'handleUser' && c.targetFilePath.includes('models.js'),
+      c.target === 'save' && c.source === 'handleUser' && c.targetFilePath.includes('user.js'),
     );
     expect(saveCall).toBeDefined();
+    // Negative: must NOT resolve to Repo#save
+    const wrongCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleUser' && c.targetFilePath.includes('repo.js'),
+    );
+    expect(wrongCall).toBeUndefined();
   });
 
   it('resolves repo.save() via JSDoc @param {Repo} in handleRepo()', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
-      c.target === 'save' && c.source === 'handleRepo' && c.targetFilePath.includes('models.js'),
+      c.target === 'save' && c.source === 'handleRepo' && c.targetFilePath.includes('repo.js'),
     );
     expect(saveCall).toBeDefined();
+    // Negative: must NOT resolve to User#save
+    const wrongCall = calls.find(c =>
+      c.target === 'save' && c.source === 'handleRepo' && c.targetFilePath.includes('user.js'),
+    );
+    expect(wrongCall).toBeUndefined();
   });
 });
 

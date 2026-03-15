@@ -625,10 +625,20 @@ describe('extractReturnTypeName', () => {
     expect(extractReturnTypeName('com.example.models.User')).toBe('User');
   });
 
-  it('returns undefined for nested generic with comma (known limitation)', () => {
-    // Promise<Map<string, User>> — comma splits inside nested generics produce incorrect results.
-    // Fixing requires balanced-bracket-aware splitting, which is out of scope.
-    expect(extractReturnTypeName('Promise<Map<string, User>>')).toBeUndefined();
+  it('unwraps wrapper over non-wrapper generic: Promise<Map<string, User>> → Map', () => {
+    // Promise is a wrapper — unwrap it to get Map<string, User>.
+    // Map is not a wrapper, so return its base type: Map.
+    expect(extractReturnTypeName('Promise<Map<string, User>>')).toBe('Map');
+  });
+
+  it('unwraps doubly-nested wrapper: Future<Result<User, Error>> → User', () => {
+    // Future → unwrap → Result<User, Error>; Result → unwrap first arg → User
+    expect(extractReturnTypeName('Future<Result<User, Error>>')).toBe('User');
+  });
+
+  it('unwraps CompletableFuture<Optional<User>> → User', () => {
+    // CompletableFuture → unwrap → Optional<User>; Optional → unwrap → User
+    expect(extractReturnTypeName('CompletableFuture<Optional<User>>')).toBe('User');
   });
 
   it('returns undefined for lowercase non-class types', () => {

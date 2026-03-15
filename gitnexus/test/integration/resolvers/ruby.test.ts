@@ -671,6 +671,12 @@ describe('Ruby constant factory call resolution (SERVICE = build_service())', ()
       c.target === 'process' && c.targetFilePath.includes('user_service.rb'),
     );
     expect(processCall).toBeDefined();
+    const wrongCall = calls.find(c =>
+      c.target === 'process' &&
+      c.sourceFilePath?.includes('app.rb') &&
+      c.targetFilePath.includes('admin_service.rb'),
+    );
+    expect(wrongCall).toBeUndefined();
   });
 
   it('resolves SERVICE.validate() to UserService#validate via constant factory call', () => {
@@ -679,5 +685,11 @@ describe('Ruby constant factory call resolution (SERVICE = build_service())', ()
       c.target === 'validate' && c.targetFilePath.includes('user_service.rb'),
     );
     expect(validateCall).toBeDefined();
+    const wrongCall = calls.find(c =>
+      c.target === 'validate' &&
+      c.sourceFilePath?.includes('app.rb') &&
+      c.targetFilePath.includes('admin_service.rb'),
+    );
+    expect(wrongCall).toBeUndefined();
   });
 });

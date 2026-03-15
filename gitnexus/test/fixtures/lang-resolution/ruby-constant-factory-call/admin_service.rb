@@ -1,4 +1,4 @@
-class UserService
+class AdminService
   def process
     true
   end
