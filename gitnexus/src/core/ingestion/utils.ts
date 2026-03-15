@@ -804,6 +804,7 @@ const SIMPLE_RECEIVER_TYPES = new Set([
   'super_expression',  // Kotlin wraps super in super_expression
   'base',              // C# base.Method()
   'parent',            // PHP parent::method()
+  'constant',          // Ruby CONSTANT.method() (uppercase identifiers)
 ]);
 
 export const extractReceiverName = (

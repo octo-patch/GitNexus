@@ -226,7 +226,7 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
   const left = node.childForFieldName('left');
   const right = node.childForFieldName('right');
   if (!left || !right) return undefined;
-  if (left.type !== 'identifier') return undefined;
+  if (left.type !== 'identifier' && left.type !== 'constant') return undefined;
   if (right.type !== 'call') return undefined;
   const method = right.childForFieldName('method');
   if (!method) return undefined;

@@ -1,4 +1,5 @@
-const { User, Repo } = require('./models');
+const { User } = require('./user');
+const { Repo } = require('./repo');
 
 /**
  * @returns {Promise<User>}

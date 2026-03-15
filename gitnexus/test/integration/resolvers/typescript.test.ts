@@ -968,15 +968,49 @@ describe('JavaScript async return type inference via JSDoc @returns {Promise<Use
   it('resolves user.save() to User#save via @returns {Promise<User>} unwrapping', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
-      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('models.js'),
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('user.js'),
     );
     expect(saveCall).toBeDefined();
+    // Negative: must NOT resolve to Repo#save
+    const wrongCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('repo.js'),
+    );
+    expect(wrongCall).toBeUndefined();
   });
 
   it('resolves repo.save() to Repo#save via @returns {Promise<Repo>} unwrapping', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
-      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('models.js'),
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('repo.js'),
+    );
+    expect(saveCall).toBeDefined();
+    // Negative: must NOT resolve to User#save
+    const wrongCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('user.js'),
+    );
+    expect(wrongCall).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JavaScript qualified return type: @returns {Promise<models.User>}
+// Verifies that dot-qualified names inside generics are not corrupted.
+// ---------------------------------------------------------------------------
+
+describe('JavaScript qualified return type via JSDoc @returns {Promise<models.User>}', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'js-jsdoc-qualified-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('resolves user.save() to User#save despite qualified return type', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('user.js'),
     );
     expect(saveCall).toBeDefined();
   });

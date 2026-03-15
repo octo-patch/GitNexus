@@ -641,3 +641,43 @@ describe('Ruby return type inference via function call', () => {
     expect(saveCall).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ruby constant LHS factory call: SERVICE = build_service() with YARD @return
+// Verifies that constant assignments (uppercase LHS) from plain function calls
+// are captured by scanConstructorBinding, not just identifier assignments.
+// ---------------------------------------------------------------------------
+
+describe('Ruby constant factory call resolution (SERVICE = build_service())', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'ruby-constant-factory-call'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects UserService and AdminService classes with process and validate methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+    expect(getNodesByLabel(result, 'Class')).toContain('AdminService');
+    expect(getNodesByLabel(result, 'Method')).toContain('process');
+    expect(getNodesByLabel(result, 'Method')).toContain('validate');
+  });
+
+  it('resolves SERVICE.process() to UserService#process via constant factory call', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const processCall = calls.find(c =>
+      c.target === 'process' && c.targetFilePath.includes('user_service.rb'),
+    );
+    expect(processCall).toBeDefined();
+  });
+
+  it('resolves SERVICE.validate() to UserService#validate via constant factory call', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const validateCall = calls.find(c =>
+      c.target === 'validate' && c.targetFilePath.includes('user_service.rb'),
+    );
+    expect(validateCall).toBeDefined();
+  });
+});

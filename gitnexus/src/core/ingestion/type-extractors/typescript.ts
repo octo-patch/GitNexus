@@ -168,9 +168,6 @@ const sanitizeReturnType = (raw: string): string | undefined => {
   if (type.startsWith('?') || type.startsWith('!')) type = type.slice(1);
   // Strip module: prefix — module:models.User → models.User
   if (type.startsWith('module:')) type = type.slice(7);
-  // Take last segment of dotted path: models.User → User
-  const dotIdx = type.lastIndexOf('.');
-  if (dotIdx >= 0) type = type.slice(dotIdx + 1);
   // Reject unions (ambiguous)
   if (type.includes('|')) return undefined;
   if (!type) return undefined;
