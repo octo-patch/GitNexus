@@ -1,6 +1,5 @@
-import type { SyntaxNode } from '../utils.js';
 import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup } from './types.js';
-import { extractVarName } from './shared.js';
+import { extractRubyConstructorAssignment } from './shared.js';
 
 /**
  * Ruby type extractor — YARD annotation parsing.
@@ -123,17 +122,15 @@ const collectYardParams = (methodNode: SyntaxNode): Map<string, string> => {
 };
 
 /**
- * Ruby declaration node types that may carry YARD annotations.
- * `method` is the tree-sitter-ruby node for `def name ... end`.
- * `singleton_method` is `def self.name ... end`.
- *
- * We intercept these in extractDeclaration to pre-populate the env
- * with YARD parameter types before the standard parameter walk.
+ * Ruby node types that may carry type bindings.
+ * - `method`/`singleton_method`: YARD @param annotations (via extractDeclaration)
+ * - `assignment`: Constructor inference like `user = User.new` (via extractInitializer;
+ *   extractDeclaration returns early for these nodes)
  */
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
   'method',
   'singleton_method',
-  'assignment',           // For constructor inference: user = User.new
+  'assignment',
 ]);
 
 /**
@@ -167,33 +164,16 @@ const extractParameter: ParameterExtractor = (_node: SyntaxNode, _env: Map<strin
 };
 
 /**
- * Ruby constructor inference: user = User.new
- * Extracts type from assignments where the RHS is a `.new` call on a constant.
- * This complements the CONSTRUCTOR_BINDING_SCANNERS in type-env.ts by also
- * handling local class names (already defined in the same file).
+ * Ruby constructor inference: user = User.new or service = Models::User.new
+ * Uses the shared extractRubyConstructorAssignment helper for AST matching,
+ * then resolves against locally-known class names.
  */
-const extractInitializer: InitializerExtractor = (node: SyntaxNode, env: Map<string, string>, classNames: ClassNameLookup): void => {
-  if (node.type !== 'assignment') return;
-
-  const left = node.childForFieldName('left');
-  const right = node.childForFieldName('right');
-  if (!left || !right) return;
-
-  // Support both local variables (identifier) and constants (SERVICE = UserService.new)
-  if (left.type !== 'identifier' && left.type !== 'constant') return;
-  const varName = extractVarName(left);
-  if (!varName || env.has(varName)) return;
-
-  // Ruby constructor pattern: ClassName.new(args)
-  if (right.type !== 'call') return;
-  const method = right.childForFieldName('method');
-  if (!method || method.text !== 'new') return;
-  const receiver = right.childForFieldName('receiver');
-  if (!receiver || receiver.type !== 'constant') return;
-
-  const calleeName = receiver.text;
-  if (classNames.has(calleeName)) {
-    env.set(varName, calleeName);
+const extractInitializer: InitializerExtractor = (node, env, classNames): void => {
+  const result = extractRubyConstructorAssignment(node);
+  if (!result) return;
+  if (env.has(result.varName)) return;
+  if (classNames.has(result.calleeName)) {
+    env.set(result.varName, result.calleeName);
   }
 };
 

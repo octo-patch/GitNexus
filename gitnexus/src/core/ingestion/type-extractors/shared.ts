@@ -7,20 +7,22 @@ import type { SyntaxNode } from '../utils.js';
  * Returns undefined for complex types (unions, intersections, function types).
  */
 export const extractSimpleTypeName = (typeNode: SyntaxNode): string | undefined => {
-  // Direct type identifier
+  // Direct type identifier (includes Ruby 'constant' for class names)
   if (typeNode.type === 'type_identifier' || typeNode.type === 'identifier'
-    || typeNode.type === 'simple_identifier') {
+    || typeNode.type === 'simple_identifier' || typeNode.type === 'constant') {
     return typeNode.text;
   }
 
-  // Qualified/scoped names: take the last segment (e.g., models.User → User)
+  // Qualified/scoped names: take the last segment (e.g., models.User → User, Models::User → User)
   if (typeNode.type === 'scoped_identifier' || typeNode.type === 'qualified_identifier'
     || typeNode.type === 'scoped_type_identifier' || typeNode.type === 'qualified_name'
     || typeNode.type === 'qualified_type'
-    || typeNode.type === 'member_expression' || typeNode.type === 'attribute') {
+    || typeNode.type === 'member_expression' || typeNode.type === 'attribute'
+    || typeNode.type === 'scope_resolution') {
     const last = typeNode.lastNamedChild;
     if (last && (last.type === 'type_identifier' || last.type === 'identifier'
-      || last.type === 'simple_identifier' || last.type === 'name')) {
+      || last.type === 'simple_identifier' || last.type === 'name'
+      || last.type === 'constant')) {
       return last.text;
     }
   }
@@ -95,7 +97,8 @@ export const extractSimpleTypeName = (typeNode: SyntaxNode): string | undefined 
  */
 export const extractVarName = (node: SyntaxNode): string | undefined => {
   if (node.type === 'identifier' || node.type === 'simple_identifier'
-    || node.type === 'variable_name' || node.type === 'name') {
+    || node.type === 'variable_name' || node.type === 'name'
+    || node.type === 'constant') {
     return node.text;
   }
   // variable_declarator (Java/C#): has a 'name' field
@@ -180,6 +183,38 @@ export const extractGenericTypeArgs = (typeNode: SyntaxNode): string[] => {
   }
 
   return result;
+};
+
+/**
+ * Match Ruby constructor assignment: `user = User.new` or `service = Models::User.new`.
+ * Returns { varName, calleeName } or undefined if the node is not a Ruby constructor assignment.
+ * Handles both simple constants and scope_resolution (namespaced) receivers.
+ */
+export const extractRubyConstructorAssignment = (
+  node: SyntaxNode,
+): { varName: string; calleeName: string } | undefined => {
+  if (node.type !== 'assignment') return undefined;
+  const left = node.childForFieldName('left');
+  const right = node.childForFieldName('right');
+  if (!left || !right) return undefined;
+  if (left.type !== 'identifier' && left.type !== 'constant') return undefined;
+  if (right.type !== 'call') return undefined;
+  const method = right.childForFieldName('method');
+  if (!method || method.text !== 'new') return undefined;
+  const receiver = right.childForFieldName('receiver');
+  if (!receiver) return undefined;
+  let calleeName: string;
+  if (receiver.type === 'constant') {
+    calleeName = receiver.text;
+  } else if (receiver.type === 'scope_resolution') {
+    // Models::User → extract last segment "User"
+    const last = receiver.lastNamedChild;
+    if (!last || last.type !== 'constant') return undefined;
+    calleeName = last.text;
+  } else {
+    return undefined;
+  }
+  return { varName: left.text, calleeName };
 };
 
 /** Find the first named child with the given node type */

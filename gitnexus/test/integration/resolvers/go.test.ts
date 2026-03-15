@@ -541,3 +541,36 @@ describe('Go type assertion type inference', () => {
     expect(greetCall!.source).toBe('process');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return type inference: user := GetUser("alice"); user.Save()
+// Go has no CONSTRUCTOR_BINDING_SCANNER for short variable declarations yet,
+// so return type inference does NOT work end-to-end for `user := GetUser()`.
+// ---------------------------------------------------------------------------
+
+describe('Go return type inference via explicit function return type', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'go-return-type-inference'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects GetUser and Save symbols', () => {
+    const allSymbols = [...getNodesByLabel(result, 'Function'), ...getNodesByLabel(result, 'Method')];
+    expect(allSymbols).toContain('GetUser');
+    expect(allSymbols).toContain('Save');
+  });
+
+  it('resolves user.Save() to User#Save via return type of GetUser() *models.User', () => {
+    // Go's extractMethodSignature captures *models.User as the return type.
+    // extractReturnTypeName strips the pointer prefix and qualified name → User.
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'Save' && c.source === 'processUser' && c.targetFilePath.includes('models')
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

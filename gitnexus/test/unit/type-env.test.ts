@@ -1714,6 +1714,26 @@ REPO = Repo.new
       expect(constructorBindings[0].calleeName).toBe('Repo');
     });
 
+    it('returns constructor bindings for Ruby namespaced constructor (service = Models::UserService.new)', () => {
+      const tree = parse(`
+service = Models::UserService.new
+`, Ruby);
+      const { constructorBindings } = buildTypeEnv(tree, 'ruby');
+      expect(constructorBindings.length).toBe(1);
+      expect(constructorBindings[0].varName).toBe('service');
+      expect(constructorBindings[0].calleeName).toBe('UserService');
+    });
+
+    it('returns constructor bindings for deeply namespaced Ruby constructor (svc = App::Models::Service.new)', () => {
+      const tree = parse(`
+svc = App::Models::Service.new
+`, Ruby);
+      const { constructorBindings } = buildTypeEnv(tree, 'ruby');
+      expect(constructorBindings.length).toBe(1);
+      expect(constructorBindings[0].varName).toBe('svc');
+      expect(constructorBindings[0].calleeName).toBe('Service');
+    });
+
     it('includes scope key in constructor bindings', () => {
       const tree = parse(`
         fun process() {

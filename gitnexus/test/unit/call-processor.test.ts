@@ -589,12 +589,46 @@ describe('extractReturnTypeName', () => {
     expect(extractReturnTypeName('Promise<Option<User>>')).toBe('User');
   });
 
-  it('unwraps Vec<User>', () => {
-    expect(extractReturnTypeName('Vec<User>')).toBe('User');
+  it('returns base type for collection generics (not unwrapped)', () => {
+    expect(extractReturnTypeName('Vec<User>')).toBe('Vec');
+    expect(extractReturnTypeName('List<User>')).toBe('List');
+    expect(extractReturnTypeName('Array<User>')).toBe('Array');
+    expect(extractReturnTypeName('Set<User>')).toBe('Set');
+    expect(extractReturnTypeName('ArrayList<User>')).toBe('ArrayList');
   });
 
   it('unwraps Optional<User>', () => {
     expect(extractReturnTypeName('Optional<User>')).toBe('User');
+  });
+
+  it('extracts Ruby :: qualified type: Models::User → User', () => {
+    expect(extractReturnTypeName('Models::User')).toBe('User');
+  });
+
+  it('extracts C++ :: qualified type: ns::HttpClient → HttpClient', () => {
+    expect(extractReturnTypeName('ns::HttpClient')).toBe('HttpClient');
+  });
+
+  it('extracts deep :: qualified type: crate::models::User → User', () => {
+    expect(extractReturnTypeName('crate::models::User')).toBe('User');
+  });
+
+  it('extracts mixed qualifier: ns.module::User → User', () => {
+    expect(extractReturnTypeName('ns.module::User')).toBe('User');
+  });
+
+  it('returns undefined for lowercase :: qualified: std::vector', () => {
+    expect(extractReturnTypeName('std::vector')).toBeUndefined();
+  });
+
+  it('extracts deep dot-qualified: com.example.models.User → User', () => {
+    expect(extractReturnTypeName('com.example.models.User')).toBe('User');
+  });
+
+  it('returns undefined for nested generic with comma (known limitation)', () => {
+    // Promise<Map<string, User>> — comma splits inside nested generics produce incorrect results.
+    // Fixing requires balanced-bracket-aware splitting, which is out of scope.
+    expect(extractReturnTypeName('Promise<Map<string, User>>')).toBeUndefined();
   });
 
   it('returns undefined for lowercase non-class types', () => {

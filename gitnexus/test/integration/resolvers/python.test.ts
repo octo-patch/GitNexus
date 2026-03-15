@@ -616,3 +616,39 @@ describe('Python class-level annotation resolution', () => {
     expect(saveCalls.length).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return type inference: user = get_user('alice'); user.save()
+// Python's scanner captures ALL call assignments, enabling return type inference.
+// ---------------------------------------------------------------------------
+
+describe('Python return type inference', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'python-return-type-inference'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User class', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+  });
+
+  it('detects get_user and save symbols', () => {
+    // Python methods inside classes may be labeled Method or Function depending on nesting
+    const allSymbols = [...getNodesByLabel(result, 'Function'), ...getNodesByLabel(result, 'Method')];
+    expect(allSymbols).toContain('get_user');
+    expect(allSymbols).toContain('save');
+  });
+
+  it('resolves user.save() to User#save via return type inference from get_user() -> User', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'process_user'
+    );
+    expect(saveCall).toBeDefined();
+    expect(saveCall!.targetFilePath).toContain('models.py');
+  });
+});

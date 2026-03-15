@@ -370,10 +370,12 @@ const PRIMITIVE_TYPES = new Set([
  * Returns undefined for complex types or primitives.
  */
 const WRAPPER_GENERICS = new Set([
-  'Promise', 'Observable', 'Option', 'Some', 'Result',
-  'Optional', 'Future', 'Task', 'ValueTask',
-  'List', 'Array', 'Vec', 'Set', 'Iterable',
-  'Sequence', 'MutableList', 'ArrayList',
+  'Promise', 'Observable', 'Future', 'Task', 'ValueTask',  // async wrappers
+  'Option', 'Some', 'Optional', 'Maybe',                   // nullable wrappers
+  'Result', 'Either',                                       // result wrappers
+  // Containers (List, Array, Vec, Set, etc.) are intentionally excluded —
+  // methods are called on the container, not the element type.
+  // Non-wrapper generics return the base type (e.g., List) via the else branch.
 ]);
 
 export const extractReturnTypeName = (raw: string): string | undefined => {
@@ -408,9 +410,9 @@ export const extractReturnTypeName = (raw: string): string | undefined => {
     return PRIMITIVE_TYPES.has(base.toLowerCase()) ? undefined : base;
   }
 
-  // Handle qualified names: models.User → User, com.example.User → User
-  if (text.includes('.')) {
-    text = text.split('.').pop()!;
+  // Handle qualified names: models.User → User, Models::User → User
+  if (text.includes('::') || text.includes('.')) {
+    text = text.split(/::|\./).pop()!;
   }
 
   // Final check: skip primitives

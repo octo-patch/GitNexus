@@ -3,7 +3,7 @@ import { FUNCTION_NODE_TYPES, extractFunctionName, CLASS_CONTAINER_TYPES } from 
 import { SupportedLanguages } from '../../config/supported-languages.js';
 import { typeConfigs, TYPED_PARAMETER_TYPES } from './type-extractors/index.js';
 import type { ClassNameLookup } from './type-extractors/types.js';
-import { extractSimpleTypeName } from './type-extractors/shared.js';
+import { extractSimpleTypeName, extractRubyConstructorAssignment } from './type-extractors/shared.js';
 import type { SymbolTable } from './symbol-table.js';
 
 /**
@@ -420,22 +420,6 @@ const extractCppConstructorBinding = (node: SyntaxNode): { varName: string; call
   return { varName, calleeName: func.text };
 };
 
-/** Ruby: user = User.new — assignment with call where method is 'new' and receiver is a constant */
-const extractRubyConstructorBinding = (node: SyntaxNode): { varName: string; calleeName: string } | undefined => {
-  if (node.type !== 'assignment') return undefined;
-  const left = node.childForFieldName('left');
-  const right = node.childForFieldName('right');
-  if (!left || !right) return undefined;
-  // Support both local variables (identifier) and constants (USER = User.new)
-  if (left.type !== 'identifier' && left.type !== 'constant') return undefined;
-  if (right.type !== 'call') return undefined;
-  const method = right.childForFieldName('method');
-  if (!method || method.text !== 'new') return undefined;
-  const receiver = right.childForFieldName('receiver');
-  if (!receiver || receiver.type !== 'constant') return undefined;
-  return { varName: left.text, calleeName: receiver.text };
-};
-
 /** Language-specific constructor-binding scanners. */
 const CONSTRUCTOR_BINDING_SCANNERS: Partial<Record<SupportedLanguages, (node: SyntaxNode) => { varName: string; calleeName: string } | undefined>> = {
   // Kotlin: val x = User(...) — property_declaration with call_expression
@@ -523,7 +507,7 @@ const CONSTRUCTOR_BINDING_SCANNERS: Partial<Record<SupportedLanguages, (node: Sy
   // Note: C is excluded — C has no constructors and `auto` is a storage-class specifier, not type inference.
   [SupportedLanguages.CPlusPlus]: extractCppConstructorBinding,
 
-  // Ruby: user = User.new — assignment with call where method is 'new' and receiver is a constant
-  [SupportedLanguages.Ruby]: extractRubyConstructorBinding,
+  // Ruby: user = User.new — uses shared helper that also handles Models::User.new
+  [SupportedLanguages.Ruby]: extractRubyConstructorAssignment,
 };
 

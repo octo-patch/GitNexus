@@ -852,3 +852,45 @@ describe('TypeScript nullable receiver resolution (optional chaining)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Return type inference: const user = getUser('alice'); user.save()
+// TS/JS has no CONSTRUCTOR_BINDING_SCANNER for plain function calls yet,
+// so return type inference does NOT work end-to-end. These tests document
+// the current state and will activate once a TS scanner is added.
+// ---------------------------------------------------------------------------
+
+describe('TypeScript return type inference via explicit function return type', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'ts-return-type-inference'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User class with save and getName methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    const methods = getNodesByLabel(result, 'Method');
+    expect(methods).toContain('save');
+    expect(methods).toContain('getName');
+  });
+
+  it('detects getUser and fetchUserAsync functions', () => {
+    const functions = getNodesByLabel(result, 'Function');
+    expect(functions).toContain('getUser');
+    expect(functions).toContain('fetchUserAsync');
+  });
+
+  it('resolves user.save() to User#save via return type of getUser(): User', () => {
+    // TS has explicit return types in the source, so extractMethodSignature captures
+    // the return type. The TS extractInitializer handles `const user = getUser()`
+    // via the variable_declarator path, enabling save() to resolve to User#save.
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('models')
+    );
+    expect(saveCall).toBeDefined();
+  });
+});
+

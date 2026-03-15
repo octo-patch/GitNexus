@@ -548,3 +548,42 @@ describe('Ruby YARD annotation type resolution', () => {
     expect(greetCall!.targetFilePath).toContain('models.rb');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Namespaced constructor: svc = Models::UserService.new; svc.process()
+// Tests scope_resolution receiver handling for Ruby namespaced classes.
+// ---------------------------------------------------------------------------
+
+describe('Ruby namespaced constructor resolution (Models::UserService.new)', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'ruby-namespaced-constructor'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects UserService class with process and validate methods', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+    const methods = getNodesByLabel(result, 'Method');
+    expect(methods).toContain('process');
+    expect(methods).toContain('validate');
+  });
+
+  it('resolves svc.process() via namespaced constructor Models::UserService.new', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const processCall = calls.find(c =>
+      c.target === 'process' && c.targetFilePath.includes('user_service.rb')
+    );
+    expect(processCall).toBeDefined();
+  });
+
+  it('resolves svc.validate() via namespaced constructor Models::UserService.new', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const validateCall = calls.find(c =>
+      c.target === 'validate' && c.targetFilePath.includes('user_service.rb')
+    );
+    expect(validateCall).toBeDefined();
+  });
+});
