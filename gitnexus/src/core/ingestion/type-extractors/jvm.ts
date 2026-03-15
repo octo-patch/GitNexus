@@ -194,10 +194,25 @@ const scanKotlinConstructorBinding: ConstructorBindingScanner = (node) => {
   const callExpr = node.namedChildren.find(c => c.type === 'call_expression');
   if (!callExpr) return undefined;
   const callee = callExpr.firstNamedChild;
-  if (!callee || callee.type !== 'simple_identifier') return undefined;
+  if (!callee) return undefined;
+
+  let calleeName: string | undefined;
+  if (callee.type === 'simple_identifier') {
+    calleeName = callee.text;
+  } else if (callee.type === 'navigation_expression') {
+    // Extract method name from qualified call: service.getUser() → getUser
+    const suffix = callee.lastNamedChild;
+    if (suffix?.type === 'navigation_suffix') {
+      const methodName = suffix.lastNamedChild;
+      if (methodName?.type === 'simple_identifier') {
+        calleeName = methodName.text;
+      }
+    }
+  }
+  if (!calleeName) return undefined;
   const nameNode = varDecl.namedChildren.find(c => c.type === 'simple_identifier');
   if (!nameNode) return undefined;
-  return { varName: nameNode.text, calleeName: callee.text };
+  return { varName: nameNode.text, calleeName };
 };
 
 export const kotlinTypeConfig: LanguageTypeConfig = {

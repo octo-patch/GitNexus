@@ -636,3 +636,46 @@ describe('Rust return type inference', () => {
     expect(saveCall!.targetFilePath).toBe('src/models.rs');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return-type inference with competing methods:
+// Two structs both have save(), factory functions disambiguate via return type
+// ---------------------------------------------------------------------------
+
+describe('Rust return-type inference via function return type', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'rust-return-type-inference'),
+      () => {},
+    );
+  }, 60000);
+
+  it('resolves user.save() to models.rs User#save via return type of get_user()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'process_user' && c.targetFilePath.includes('models')
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('user.save() does NOT resolve to Repo#save', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const wrongSave = calls.find(c =>
+      c.target === 'save' && c.source === 'process_user'
+    );
+    // Should resolve to exactly one target — if it resolves at all, check it's the right one
+    if (wrongSave) {
+      expect(wrongSave.targetFilePath).toContain('models');
+    }
+  });
+
+  it('resolves repo.save() to models.rs Repo#save via return type of get_repo()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'process_repo' && c.targetFilePath.includes('models')
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

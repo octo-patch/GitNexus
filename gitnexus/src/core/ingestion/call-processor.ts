@@ -20,6 +20,7 @@ import {
   findEnclosingClassId,
 } from './utils.js';
 import { buildTypeEnv } from './type-env.js';
+import type { ConstructorBinding } from './type-env.js';
 import { getTreeSitterBufferSize } from './constants.js';
 import type { ExtractedCall, ExtractedHeritage, ExtractedRoute, FileConstructorBindings } from './workers/parse-worker.js';
 import { callRouters } from './call-routing.js';
@@ -52,6 +53,65 @@ const findEnclosingFunction = (
   }
 
   return null;
+};
+
+/**
+ * Verify constructor bindings against SymbolTable and infer receiver types.
+ * Shared between sequential (processCalls) and worker (processCallsFromExtracted) paths.
+ */
+const verifyConstructorBindings = (
+  bindings: readonly ConstructorBinding[],
+  filePath: string,
+  ctx: ResolutionContext,
+  graph?: KnowledgeGraph,
+): Map<string, string> => {
+  const verified = new Map<string, string>();
+
+  for (const { scope, varName, calleeName, receiverClassName } of bindings) {
+    const tiered = ctx.resolve(calleeName, filePath);
+    const isClass = tiered?.candidates.some(def => def.type === 'Class') ?? false;
+
+    if (isClass) {
+      verified.set(receiverKey(extractFuncNameFromScope(scope), varName), calleeName);
+    } else {
+      let callableDefs = tiered?.candidates.filter(d =>
+        d.type === 'Function' || d.type === 'Method'
+      );
+
+      // When receiver class is known (e.g. $this->method() in PHP), narrow
+      // candidates to methods owned by that class to avoid false disambiguation failures.
+      if (callableDefs && callableDefs.length > 1 && receiverClassName) {
+        if (graph) {
+          // Worker path: use graph.getNode (fast, already in-memory)
+          const narrowed = callableDefs.filter(d => {
+            if (!d.ownerId) return false;
+            const owner = graph.getNode(d.ownerId);
+            return owner?.properties.name === receiverClassName;
+          });
+          if (narrowed.length > 0) callableDefs = narrowed;
+        } else {
+          // Sequential path: use ctx.resolve (no graph available)
+          const classResolved = ctx.resolve(receiverClassName, filePath);
+          if (classResolved && classResolved.candidates.length > 0) {
+            const classNodeIds = new Set(classResolved.candidates.map(c => c.nodeId));
+            const narrowed = callableDefs.filter(d =>
+              d.ownerId && classNodeIds.has(d.ownerId)
+            );
+            if (narrowed.length > 0) callableDefs = narrowed;
+          }
+        }
+      }
+
+      if (callableDefs && callableDefs.length === 1 && callableDefs[0].returnType) {
+        const typeName = extractReturnTypeName(callableDefs[0].returnType);
+        if (typeName) {
+          verified.set(receiverKey(extractFuncNameFromScope(scope), varName), typeName);
+        }
+      }
+    }
+  }
+
+  return verified;
 };
 
 export const processCalls = async (
@@ -110,29 +170,9 @@ export const processCalls = async (
     const typeEnv = lang ? buildTypeEnv(tree, lang, ctx.symbols) : null;
     const callRouter = callRouters[language];
 
-    // Verify constructor bindings against SymbolTable for return type inference.
-    // In the worker path, this happens in processCallsFromExtracted. In the
-    // sequential path, we must do it here before resolving calls.
-    const verifiedReceivers = new Map<string, string>();
-    if (typeEnv && typeEnv.constructorBindings.length > 0) {
-      for (const { scope, varName, calleeName } of typeEnv.constructorBindings) {
-        const tiered = ctx.resolve(calleeName, file.path);
-        const isClass = tiered?.candidates.some(def => def.type === 'Class') ?? false;
-        if (isClass) {
-          verifiedReceivers.set(receiverKey(extractFuncNameFromScope(scope), varName), calleeName);
-        } else {
-          const callableDefs = tiered?.candidates.filter(d =>
-            d.type === 'Function' || d.type === 'Method'
-          );
-          if (callableDefs && callableDefs.length === 1 && callableDefs[0].returnType) {
-            const typeName = extractReturnTypeName(callableDefs[0].returnType);
-            if (typeName) {
-              verifiedReceivers.set(receiverKey(extractFuncNameFromScope(scope), varName), typeName);
-            }
-          }
-        }
-      }
-    }
+    const verifiedReceivers = typeEnv && typeEnv.constructorBindings.length > 0
+      ? verifyConstructorBindings(typeEnv.constructorBindings, file.path, ctx)
+      : new Map<string, string>();
 
     ctx.enableCache(file.path);
 
@@ -404,6 +444,11 @@ const WRAPPER_GENERICS = new Set([
   'Promise', 'Observable', 'Future', 'CompletableFuture', 'Task', 'ValueTask',  // async wrappers
   'Option', 'Some', 'Optional', 'Maybe',                                         // nullable wrappers
   'Result', 'Either',                                                             // result wrappers
+  // Rust smart pointers (Deref to inner type)
+  'Rc', 'Arc', 'Weak',                                                          // pointer types
+  'MutexGuard', 'RwLockReadGuard', 'RwLockWriteGuard',                          // guard types
+  'Ref', 'RefMut',                                                               // RefCell guards
+  'Cow',                                                                         // copy-on-write
   // Containers (List, Array, Vec, Set, etc.) are intentionally excluded —
   // methods are called on the container, not the element type.
   // Non-wrapper generics return the base type (e.g., List) via the else branch.
@@ -510,36 +555,9 @@ export const processCallsFromExtracted = async (
   const fileReceiverTypes = new Map<string, Map<string, string>>();
   if (constructorBindings) {
     for (const { filePath, bindings } of constructorBindings) {
-      for (const { scope, varName, calleeName, receiverClassName } of bindings) {
-        const tiered = ctx.resolve(calleeName, filePath);
-        const isClass = tiered?.candidates.some(def => def.type === 'Class') ?? false;
-        if (isClass) {
-          if (!fileReceiverTypes.has(filePath)) fileReceiverTypes.set(filePath, new Map());
-          fileReceiverTypes.get(filePath)!.set(receiverKey(extractFuncNameFromScope(scope), varName), calleeName);
-        } else {
-          // Return type inference: if the callee is a function/method with a known
-          // return type, bind the variable to that return type.
-          let callableDefs = tiered?.candidates.filter(d =>
-            d.type === 'Function' || d.type === 'Method'
-          );
-          // When receiver class is known (e.g. $this->method() in PHP), narrow
-          // candidates to methods owned by that class to avoid false disambiguation failures.
-          if (callableDefs && callableDefs.length > 1 && receiverClassName) {
-            const narrowed = callableDefs.filter(d => {
-              if (!d.ownerId) return false;
-              const owner = graph.getNode(d.ownerId);
-              return owner?.properties.name === receiverClassName;
-            });
-            if (narrowed.length > 0) callableDefs = narrowed;
-          }
-          if (callableDefs && callableDefs.length === 1 && callableDefs[0].returnType) {
-            const typeName = extractReturnTypeName(callableDefs[0].returnType);
-            if (typeName) {
-              if (!fileReceiverTypes.has(filePath)) fileReceiverTypes.set(filePath, new Map());
-              fileReceiverTypes.get(filePath)!.set(receiverKey(extractFuncNameFromScope(scope), varName), typeName);
-            }
-          }
-        }
+      const verified = verifyConstructorBindings(bindings, filePath, ctx, graph);
+      if (verified.size > 0) {
+        fileReceiverTypes.set(filePath, verified);
       }
     }
   }

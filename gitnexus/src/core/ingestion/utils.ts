@@ -618,9 +618,19 @@ export const extractMethodSignature = (node: SyntaxNode | null | undefined): Met
   // Go: 'result' field is either a type_identifier or parameter_list (multi-return)
   const goResult = node.childForFieldName?.('result');
   if (goResult) {
-    returnType = goResult.type === 'parameter_list'
-      ? goResult.text   // multi-return: "(string, error)"
-      : goResult.text;  // single return: "int"
+    if (goResult.type === 'parameter_list') {
+      // Multi-return: extract first parameter's type only (e.g. (*User, error) → *User)
+      const firstParam = goResult.firstNamedChild;
+      if (firstParam?.type === 'parameter_declaration') {
+        const typeNode = firstParam.childForFieldName('type');
+        if (typeNode) returnType = typeNode.text;
+      } else if (firstParam) {
+        // Unnamed return types: (string, error) — first child is a bare type node
+        returnType = firstParam.text;
+      }
+    } else {
+      returnType = goResult.text;
+    }
   }
 
   // Rust: 'return_type' field — the value IS the type node (e.g. primitive_type, type_identifier).

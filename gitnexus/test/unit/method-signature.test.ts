@@ -268,7 +268,7 @@ func parse(s string) (string, error) { return s, nil }`;
 
       const sig = extractMethodSignature(funcNode);
       expect(sig.parameterCount).toBe(1);
-      expect(sig.returnType).toBe('(string, error)');
+      expect(sig.returnType).toBe('string');
     });
 
     it('handles no return type', () => {

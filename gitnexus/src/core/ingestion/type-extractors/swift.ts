@@ -102,6 +102,10 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
     if (receiver?.type === 'simple_identifier' && suffix?.text === 'init') {
       return { varName, calleeName: receiver.text };
     }
+    // General qualified call: service.getUser() → extract method name
+    if (suffix?.type === 'simple_identifier') {
+      return { varName, calleeName: suffix.text };
+    }
   }
   return undefined;
 };

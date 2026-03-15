@@ -16,3 +16,12 @@ func processUserCrossPackage() {
 	user := models.NewUser("bob")
 	user.Save()
 }
+
+func GetRepo(name string) *models.Repo {
+	return &models.Repo{Name: name}
+}
+
+func processRepo() {
+	repo := GetRepo("main")
+	repo.Save()
+}

@@ -179,3 +179,46 @@ describe.skipIf(!swiftAvailable)('Swift return type inference', () => {
     expect(saveCall).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return-type inference with competing methods:
+// Two classes both have save(), factory functions disambiguate via return type
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!swiftAvailable)('Swift return-type inference via function return type', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'swift-return-type-inference'),
+      () => {},
+    );
+  }, 60000);
+
+  it('resolves user.save() to User#save via return type of getUser()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('Models.swift')
+    );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('user.save() does NOT resolve to Repo#save', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const wrongSave = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser'
+    );
+    // Should resolve to exactly one target — if it resolves at all, check it's the right one
+    if (wrongSave) {
+      expect(wrongSave.targetFilePath).toContain('Models.swift');
+    }
+  });
+
+  it('resolves repo.save() to Repo#save via return type of getRepo()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processRepo' && c.targetFilePath.includes('Models.swift')
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

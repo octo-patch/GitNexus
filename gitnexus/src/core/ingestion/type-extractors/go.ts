@@ -147,10 +147,30 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
   const left = node.childForFieldName('left');
   const right = node.childForFieldName('right');
   if (!left || !right) return undefined;
-  // Single assignment only — skip multi-return like `user, err := GetUser()`
   const leftIds = left.type === 'expression_list' ? left.namedChildren : [left];
-  if (leftIds.length !== 1 || leftIds[0].type !== 'identifier') return undefined;
   const rightExprs = right.type === 'expression_list' ? right.namedChildren : [right];
+
+  // Multi-return: user, err := NewUser() — bind first var when second is err/ok/_
+  if (leftIds.length === 2 && rightExprs.length === 1) {
+    const secondVar = leftIds[1];
+    const isErrorOrDiscard =
+      secondVar.text === '_' ||
+      secondVar.text === 'err' ||
+      secondVar.text === 'ok' ||
+      secondVar.text === 'error';
+    if (isErrorOrDiscard && leftIds[0].type === 'identifier') {
+      if (rightExprs[0].type !== 'call_expression') return undefined;
+      const func = rightExprs[0].childForFieldName('function');
+      if (!func) return undefined;
+      if (func.text === 'new' || func.text === 'make') return undefined;
+      const calleeName = extractSimpleTypeName(func);
+      if (!calleeName) return undefined;
+      return { varName: leftIds[0].text, calleeName };
+    }
+  }
+
+  // Single assignment only
+  if (leftIds.length !== 1 || leftIds[0].type !== 'identifier') return undefined;
   if (rightExprs.length !== 1 || rightExprs[0].type !== 'call_expression') return undefined;
   const func = rightExprs[0].childForFieldName('function');
   if (!func) return undefined;

@@ -641,6 +641,34 @@ describe('extractReturnTypeName', () => {
     expect(extractReturnTypeName('CompletableFuture<Optional<User>>')).toBe('User');
   });
 
+  // Rust smart pointer unwrapping
+  it('unwraps Rc<User> → User', () => {
+    expect(extractReturnTypeName('Rc<User>')).toBe('User');
+  });
+  it('unwraps Arc<User> → User', () => {
+    expect(extractReturnTypeName('Arc<User>')).toBe('User');
+  });
+  it('unwraps Weak<User> → User', () => {
+    expect(extractReturnTypeName('Weak<User>')).toBe('User');
+  });
+  it('unwraps MutexGuard<User> → User', () => {
+    expect(extractReturnTypeName('MutexGuard<User>')).toBe('User');
+  });
+  it('unwraps RwLockReadGuard<User> → User', () => {
+    expect(extractReturnTypeName('RwLockReadGuard<User>')).toBe('User');
+  });
+  it('unwraps Cow<User> → User', () => {
+    expect(extractReturnTypeName('Cow<User>')).toBe('User');
+  });
+  // Nested: Arc<Option<User>> → User (double unwrap)
+  it('unwraps Arc<Option<User>> → User', () => {
+    expect(extractReturnTypeName('Arc<Option<User>>')).toBe('User');
+  });
+  // NOT unwrapped (containers/wrappers not in set)
+  it('does not unwrap Mutex<User> (not a Deref wrapper)', () => {
+    expect(extractReturnTypeName('Mutex<User>')).toBe('Mutex');
+  });
+
   it('returns undefined for lowercase non-class types', () => {
     expect(extractReturnTypeName('error')).toBeUndefined();
   });
