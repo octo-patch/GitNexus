@@ -1,5 +1,6 @@
 import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup } from './types.js';
 import { extractRubyConstructorAssignment } from './shared.js';
+import { SyntaxNode } from '../utils.js';
 
 /**
  * Ruby type extractor — YARD annotation parsing.
@@ -19,7 +20,7 @@ import { extractRubyConstructorAssignment } from './shared.js';
  *
  * Resolution tiers:
  * - Tier 0: YARD @param annotations (extractDeclaration pre-populates env)
- * - Tier 1: Constructor inference via `user = User.new` (handled by CONSTRUCTOR_BINDING_SCANNERS in type-env.ts)
+ * - Tier 1: Constructor inference via `user = User.new` (handled by scanConstructorBinding in typeConfig)
  */
 
 /** Regex to extract @param annotations: `@param name [Type]` */

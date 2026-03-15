@@ -1,6 +1,6 @@
 import type { SyntaxNode } from '../utils.js';
 import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup, ConstructorBindingScanner } from './types.js';
-import { extractSimpleTypeName, extractVarName, extractCalleeName, findChildByType } from './shared.js';
+import { extractSimpleTypeName, extractVarName, findChildByType } from './shared.js';
 
 // ── Java ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ const scanJavaConstructorBinding: ConstructorBindingScanner = (node) => {
   const typeNode = node.childForFieldName('type');
   if (!typeNode) return undefined;
   if (typeNode.text !== 'var') return undefined;
-  const declarator = node.namedChildren.find((c: any) => c.type === 'variable_declarator');
+  const declarator = node.namedChildren.find((c: SyntaxNode) => c.type === 'variable_declarator');
   if (!declarator) return undefined;
   const nameNode = declarator.childForFieldName('name');
   const value = declarator.childForFieldName('value');
