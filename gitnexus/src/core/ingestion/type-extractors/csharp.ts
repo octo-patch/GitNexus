@@ -106,26 +106,29 @@ const extractParameter: ParameterExtractor = (node: SyntaxNode, env: Map<string,
 /** C#: var x = SomeFactory(...) → bind x to SomeFactory (constructor-like call) */
 const scanConstructorBinding: ConstructorBindingScanner = (node) => {
   if (node.type !== 'variable_declaration') return undefined;
-  const typeNode = node.childForFieldName('type');
-  // Only handle implicit_type (var) — explicit types handled by extractDeclaration
-  if (!typeNode || typeNode.type !== 'implicit_type') return undefined;
-  // Find first variable_declarator child
+  // Find type and declarator children by iterating (C# grammar doesn't expose 'type' as a named field)
+  let typeNode: SyntaxNode | null = null;
   let declarator: SyntaxNode | null = null;
   for (let i = 0; i < node.namedChildCount; i++) {
     const child = node.namedChild(i);
-    if (child?.type === 'variable_declarator') { declarator = child; break; }
+    if (!child) continue;
+    if (child.type === 'variable_declarator') { if (!declarator) declarator = child; }
+    else if (!typeNode) { typeNode = child; }
   }
+  // Only handle implicit_type (var) — explicit types handled by extractDeclaration
+  if (!typeNode || typeNode.type !== 'implicit_type') return undefined;
   if (!declarator) return undefined;
   const nameNode = declarator.childForFieldName('name') ?? declarator.firstNamedChild;
   if (!nameNode || nameNode.type !== 'identifier') return undefined;
-  // Find equals_value_clause
-  let eqClause: SyntaxNode | null = null;
+  // Find the initializer value: either inside equals_value_clause or as a direct child
+  // (tree-sitter-c-sharp puts invocation_expression directly inside variable_declarator)
+  let value: SyntaxNode | null = null;
   for (let i = 0; i < declarator.namedChildCount; i++) {
     const child = declarator.namedChild(i);
-    if (child?.type === 'equals_value_clause') { eqClause = child; break; }
+    if (!child) continue;
+    if (child.type === 'equals_value_clause') { value = child.firstNamedChild; break; }
+    if (child.type === 'invocation_expression' || child.type === 'object_creation_expression') { value = child; break; }
   }
-  if (!eqClause) return undefined;
-  const value = eqClause.firstNamedChild;
   if (!value) return undefined;
   // Skip object_creation_expression (new User()) — handled by extractInitializer
   if (value.type === 'object_creation_expression') return undefined;

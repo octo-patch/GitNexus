@@ -17,7 +17,8 @@ export const extractSimpleTypeName = (typeNode: SyntaxNode): string | undefined 
   if (typeNode.type === 'scoped_identifier' || typeNode.type === 'qualified_identifier'
     || typeNode.type === 'scoped_type_identifier' || typeNode.type === 'qualified_name'
     || typeNode.type === 'qualified_type'
-    || typeNode.type === 'member_expression' || typeNode.type === 'attribute'
+    || typeNode.type === 'member_expression' || typeNode.type === 'member_access_expression'
+    || typeNode.type === 'attribute'
     || typeNode.type === 'scope_resolution') {
     const last = typeNode.lastNamedChild;
     if (last && (last.type === 'type_identifier' || last.type === 'identifier'

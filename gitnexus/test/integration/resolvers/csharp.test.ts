@@ -575,25 +575,34 @@ describe('C# return type inference via var + invocation', () => {
     );
   }, 60000);
 
-  it('detects User and UserService classes', () => {
+  it('detects User, UserService, and Repo classes', () => {
     expect(getNodesByLabel(result, 'Class')).toContain('User');
     expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+    expect(getNodesByLabel(result, 'Class')).toContain('Repo');
   });
 
-  it('detects Save and GetUser methods', () => {
+  it('detects Save on both User and Repo, plus GetUser', () => {
     const methods = getNodesByLabel(result, 'Method');
     expect(methods).toContain('Save');
     expect(methods).toContain('GetUser');
+    // Repo.Save is also detected, proving the disambiguation test is meaningful
+    expect(methods.filter((m: string) => m === 'Save').length).toBe(2);
   });
 
-  it('resolves user.Save() to User#Save via return type of GetUser(): User', () => {
-    // C#'s CONSTRUCTOR_BINDING_SCANNER binds `var user = svc.GetUser()` to the
-    // return type of GetUser (User), so the subsequent user.Save() call resolves
-    // to User#Save rather than an unresolved target.
+  it('resolves user.Save() to User#Save (not Repo#Save) via return type of GetUser(): User', () => {
+    // scanConstructorBinding binds `var user = svc.GetUser()` → calleeName "GetUser".
+    // processCallsFromExtracted verifies GetUser's returnType is "User" via
+    // PackageMap resolution of `using ReturnType.Models;`, then receiver filtering
+    // resolves user.Save() to User#Save (not Repo#Save).
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
-      c.target === 'Save' && c.source === 'Run' && c.targetFilePath.includes('Models'),
+      c.target === 'Save' && c.source === 'Run' && c.targetFilePath.includes('User.cs'),
     );
     expect(saveCall).toBeDefined();
+    // Must NOT resolve to Repo.Save — that would mean disambiguation failed
+    const repoSave = calls.find(c =>
+      c.target === 'Save' && c.source === 'Run' && c.targetFilePath.includes('Repo.cs'),
+    );
+    expect(repoSave).toBeUndefined();
   });
 });

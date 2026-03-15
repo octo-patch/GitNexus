@@ -1794,5 +1794,34 @@ svc = App::Models::Service.new
       expect(flatGet(env, 'user')).toBe('User');
       expect(constructorBindings.find(b => b.varName === 'user')).toBeUndefined();
     });
+
+    it('returns constructor binding for C# var user = svc.GetUser()', () => {
+      const tree = parse(`
+        class App {
+          void Run() {
+            var svc = new UserService();
+            var user = svc.GetUser("alice");
+          }
+        }
+      `, CSharp);
+      const { constructorBindings } = buildTypeEnv(tree, 'csharp');
+      const binding = constructorBindings.find(b => b.varName === 'user');
+      expect(binding).toBeDefined();
+      expect(binding!.calleeName).toBe('GetUser');
+    });
+
+    it('returns constructor binding for C# var user = GetUser() (standalone call)', () => {
+      const tree = parse(`
+        class App {
+          void Run() {
+            var user = GetUser("alice");
+          }
+        }
+      `, CSharp);
+      const { constructorBindings } = buildTypeEnv(tree, 'csharp');
+      const binding = constructorBindings.find(b => b.varName === 'user');
+      expect(binding).toBeDefined();
+      expect(binding!.calleeName).toBe('GetUser');
+    });
   });
 });

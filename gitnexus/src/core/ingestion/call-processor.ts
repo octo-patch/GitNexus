@@ -110,6 +110,30 @@ export const processCalls = async (
     const typeEnv = lang ? buildTypeEnv(tree, lang, ctx.symbols) : null;
     const callRouter = callRouters[language];
 
+    // Verify constructor bindings against SymbolTable for return type inference.
+    // In the worker path, this happens in processCallsFromExtracted. In the
+    // sequential path, we must do it here before resolving calls.
+    const verifiedReceivers = new Map<string, string>();
+    if (typeEnv && typeEnv.constructorBindings.length > 0) {
+      for (const { scope, varName, calleeName } of typeEnv.constructorBindings) {
+        const tiered = ctx.resolve(calleeName, file.path);
+        const isClass = tiered?.candidates.some(def => def.type === 'Class') ?? false;
+        if (isClass) {
+          verifiedReceivers.set(receiverKey(extractFuncNameFromScope(scope), varName), calleeName);
+        } else {
+          const callableDefs = tiered?.candidates.filter(d =>
+            d.type === 'Function' || d.type === 'Method'
+          );
+          if (callableDefs && callableDefs.length === 1 && callableDefs[0].returnType) {
+            const typeName = extractReturnTypeName(callableDefs[0].returnType);
+            if (typeName) {
+              verifiedReceivers.set(receiverKey(extractFuncNameFromScope(scope), varName), typeName);
+            }
+          }
+        }
+      }
+    }
+
     ctx.enableCache(file.path);
 
     matches.forEach(match => {
@@ -184,7 +208,14 @@ export const processCalls = async (
       const callNode = captureMap['call'];
       const callForm = inferCallForm(callNode, nameNode);
       const receiverName = callForm === 'member' ? extractReceiverName(nameNode) : undefined;
-      const receiverTypeName = receiverName && typeEnv ? typeEnv.lookup(receiverName, callNode) : undefined;
+      let receiverTypeName = receiverName && typeEnv ? typeEnv.lookup(receiverName, callNode) : undefined;
+      // Fall back to verified constructor bindings for return type inference
+      if (!receiverTypeName && receiverName && verifiedReceivers.size > 0) {
+        const enclosingFunc = findEnclosingFunction(callNode, file.path, ctx);
+        const funcName = enclosingFunc ? extractFuncNameFromSourceId(enclosingFunc) : '';
+        receiverTypeName = verifiedReceivers.get(receiverKey(funcName, receiverName))
+          ?? verifiedReceivers.get(receiverKey('', receiverName));
+      }
 
       const resolved = resolveCallTarget({
         calledName,

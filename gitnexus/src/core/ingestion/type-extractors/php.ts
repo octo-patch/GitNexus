@@ -110,7 +110,7 @@ const extractParameter: ParameterExtractor = (node: SyntaxNode, env: Map<string,
   if (varName && typeName) env.set(varName, typeName);
 };
 
-/** PHP: $x = SomeFactory() — bind variable to factory/static call return type */
+/** PHP: $x = SomeFactory() or $x = $this->getUser() — bind variable to call return type */
 const scanConstructorBinding: ConstructorBindingScanner = (node) => {
   if (node.type !== 'assignment_expression') return undefined;
   const left = node.childForFieldName('left');
@@ -119,13 +119,18 @@ const scanConstructorBinding: ConstructorBindingScanner = (node) => {
   if (left.type !== 'variable_name') return undefined;
   // Skip object_creation_expression (new User()) — handled by extractInitializer
   if (right.type === 'object_creation_expression') return undefined;
-  if (right.type !== 'function_call_expression') return undefined;
-  const calleeName = extractCalleeName(right);
-  if (!calleeName) return undefined;
-  // Keep the $ sigil — PHP env keys are stored with $ (e.g. "$user") by extractVarName
-  const varName = left.text;
-  if (!varName) return undefined;
-  return { varName, calleeName };
+  // Handle both standalone function calls and method calls ($this->getUser())
+  if (right.type === 'function_call_expression') {
+    const calleeName = extractCalleeName(right);
+    if (!calleeName) return undefined;
+    return { varName: left.text, calleeName };
+  }
+  if (right.type === 'member_call_expression') {
+    const methodName = right.childForFieldName('name');
+    if (!methodName) return undefined;
+    return { varName: left.text, calleeName: methodName.text };
+  }
+  return undefined;
 };
 
 export const typeConfig: LanguageTypeConfig = {

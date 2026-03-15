@@ -1,4 +1,4 @@
-namespace Models;
+namespace ReturnType.Models;
 
 public class User
 {

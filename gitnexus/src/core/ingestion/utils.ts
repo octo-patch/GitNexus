@@ -640,6 +640,14 @@ export const extractMethodSignature = (node: SyntaxNode | null | undefined): Met
     }
   }
 
+  // C#: 'returns' field on method_declaration
+  if (!returnType) {
+    const csReturn = node.childForFieldName?.('returns');
+    if (csReturn && csReturn.text !== 'void') {
+      returnType = csReturn.text;
+    }
+  }
+
   // TS/Rust/Python/C#/Kotlin: type_annotation or return_type child
   if (!returnType) {
     for (const child of node.children) {

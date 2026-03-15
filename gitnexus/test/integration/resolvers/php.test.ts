@@ -698,11 +698,12 @@ describe('PHP typed class property resolution', () => {
 
 // ---------------------------------------------------------------------------
 // Return type inference: $user = $this->getUser("alice"); $user->save()
-// PHP's CONSTRUCTOR_BINDING_SCANNER captures assignment_expression with
-// function_call_expression values, enabling return type inference.
+// PHP's scanConstructorBinding captures assignment_expression with both
+// function_call_expression and member_call_expression values, enabling
+// return type inference for method calls on objects.
 // ---------------------------------------------------------------------------
 
-describe('PHP return type inference via function call', () => {
+describe('PHP return type inference via member call', () => {
   let result: PipelineResult;
 
   beforeAll(async () => {
@@ -712,22 +713,30 @@ describe('PHP return type inference via function call', () => {
     );
   }, 60000);
 
-  it('detects User and UserService classes', () => {
+  it('detects User, UserService, and Repo classes', () => {
     expect(getNodesByLabel(result, 'Class')).toContain('User');
     expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+    expect(getNodesByLabel(result, 'Class')).toContain('Repo');
   });
 
-  it('detects save and getUser methods', () => {
+  it('detects save on both User and Repo, and getUser method', () => {
     const methods = getNodesByLabel(result, 'Method');
     expect(methods).toContain('save');
     expect(methods).toContain('getUser');
+    // save exists on both User and Repo — disambiguation required
+    expect(methods.filter((m: string) => m === 'save').length).toBe(2);
   });
 
-  it('resolves $user->save() to User#save via return type of getUser(): User', () => {
+  it('resolves $user->save() to User#save (not Repo#save) via return type of getUser(): User', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
       c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('User.php'),
     );
     expect(saveCall).toBeDefined();
+    // Must NOT resolve to Repo.save — that would mean disambiguation failed
+    const repoSave = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('Repo.php'),
+    );
+    expect(repoSave).toBeUndefined();
   });
 });
