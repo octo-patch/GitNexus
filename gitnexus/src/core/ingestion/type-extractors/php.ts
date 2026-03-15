@@ -1,6 +1,6 @@
 import type { SyntaxNode } from '../utils.js';
-import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup } from './types.js';
-import { extractSimpleTypeName, extractVarName } from './shared.js';
+import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup, ConstructorBindingScanner } from './types.js';
+import { extractSimpleTypeName, extractVarName, extractCalleeName } from './shared.js';
 
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
   'assignment_expression', // For constructor inference: $x = new User()
@@ -110,9 +110,28 @@ const extractParameter: ParameterExtractor = (node: SyntaxNode, env: Map<string,
   if (varName && typeName) env.set(varName, typeName);
 };
 
+/** PHP: $x = SomeFactory() — bind variable to factory/static call return type */
+const scanConstructorBinding: ConstructorBindingScanner = (node) => {
+  if (node.type !== 'assignment_expression') return undefined;
+  const left = node.childForFieldName('left');
+  const right = node.childForFieldName('right');
+  if (!left || !right) return undefined;
+  if (left.type !== 'variable_name') return undefined;
+  // Skip object_creation_expression (new User()) — handled by extractInitializer
+  if (right.type === 'object_creation_expression') return undefined;
+  if (right.type !== 'function_call_expression') return undefined;
+  const calleeName = extractCalleeName(right);
+  if (!calleeName) return undefined;
+  // Keep the $ sigil — PHP env keys are stored with $ (e.g. "$user") by extractVarName
+  const varName = left.text;
+  if (!varName) return undefined;
+  return { varName, calleeName };
+};
+
 export const typeConfig: LanguageTypeConfig = {
   declarationNodeTypes: DECLARATION_NODE_TYPES,
   extractDeclaration,
   extractParameter,
   extractInitializer,
+  scanConstructorBinding,
 };

@@ -3,7 +3,7 @@ import { FUNCTION_NODE_TYPES, extractFunctionName, CLASS_CONTAINER_TYPES } from 
 import { SupportedLanguages } from '../../config/supported-languages.js';
 import { typeConfigs, TYPED_PARAMETER_TYPES } from './type-extractors/index.js';
 import type { ClassNameLookup } from './type-extractors/types.js';
-import { extractSimpleTypeName, extractRubyConstructorAssignment } from './type-extractors/shared.js';
+import { extractSimpleTypeName } from './type-extractors/shared.js';
 import type { SymbolTable } from './symbol-table.js';
 
 /**
@@ -270,19 +270,13 @@ const createClassNameLookup = (
 };
 
 /**
- * Build a scoped TypeEnv from a tree-sitter AST for a given language.
- * Single-pass: collects class/struct names AND type bindings in one walk.
- * Class names are accumulated incrementally — this is safe because no
- * language allows constructing a class before its definition.
+ * Build a TypeEnvironment from a tree-sitter AST for a given language.
+ * Single-pass: collects class/struct names, type bindings, AND constructor
+ * bindings that couldn't be resolved locally — all in one AST walk.
  *
  * When a symbolTable is provided (call-processor path), class names from across
  * the project are available for constructor inference in languages like Kotlin
  * where constructors are syntactically identical to function calls.
- */
-/**
- * Build a TypeEnvironment from a tree-sitter AST for a given language.
- * Single-pass: collects class/struct names, type bindings, AND constructor
- * bindings that couldn't be resolved locally — all in one AST walk.
  */
 export const buildTypeEnv = (
   tree: { rootNode: SyntaxNode },
@@ -293,7 +287,6 @@ export const buildTypeEnv = (
   const localClassNames = new Set<string>();
   const classNames = createClassNameLookup(localClassNames, symbolTable);
   const config = typeConfigs[language];
-  const scanner = CONSTRUCTOR_BINDING_SCANNERS[language];
   const bindings: ConstructorBinding[] = [];
 
   /**
@@ -347,8 +340,8 @@ export const buildTypeEnv = (
 
     // Scan for constructor bindings that couldn't be resolved locally.
     // Only collect if TypeEnv didn't already resolve this binding.
-    if (scanner) {
-      const result = scanner(node);
+    if (config.scanConstructorBinding) {
+      const result = config.scanConstructorBinding(node);
       if (result && !scopeEnv.has(result.varName)) {
         bindings.push({ scope, ...result });
       }
@@ -383,301 +376,4 @@ export interface ConstructorBinding {
   calleeName: string;
 }
 
-/** C/C++: auto x = User() where function is an identifier (not type_identifier) */
-const extractCppConstructorBinding = (node: SyntaxNode): { varName: string; calleeName: string } | undefined => {
-  if (node.type !== 'declaration') return undefined;
-  const typeNode = node.childForFieldName('type');
-  if (!typeNode) return undefined;
-  const typeText = typeNode.text;
-  if (typeText !== 'auto' && typeText !== 'decltype(auto)' && typeNode.type !== 'placeholder_type_specifier') return undefined;
-  const declarator = node.childForFieldName('declarator');
-  if (!declarator || declarator.type !== 'init_declarator') return undefined;
-  const value = declarator.childForFieldName('value');
-  if (!value || value.type !== 'call_expression') return undefined;
-  const func = value.childForFieldName('function');
-  // Match plain identifiers (type_identifier is already resolved by extractInitializer)
-  // and qualified/scoped identifiers for namespaced calls like ns::HttpClient()
-  if (!func) return undefined;
-  if (func.type === 'qualified_identifier' || func.type === 'scoped_identifier') {
-    // ns::HttpClient → extract "HttpClient" (last segment)
-    const last = func.lastNamedChild;
-    if (!last) return undefined;
-    const nameNode = declarator.childForFieldName('declarator');
-    if (!nameNode) return undefined;
-    const finalName = nameNode.type === 'pointer_declarator' || nameNode.type === 'reference_declarator'
-      ? nameNode.firstNamedChild : nameNode;
-    if (!finalName) return undefined;
-    return { varName: finalName.text, calleeName: last.text };
-  }
-  if (func.type !== 'identifier') return undefined;
-  const nameNode = declarator.childForFieldName('declarator');
-  if (!nameNode) return undefined;
-  const finalName = nameNode.type === 'pointer_declarator' || nameNode.type === 'reference_declarator'
-    ? nameNode.firstNamedChild : nameNode;
-  if (!finalName) return undefined;
-  const varName = finalName.text;
-  if (!varName) return undefined;
-  return { varName, calleeName: func.text };
-};
-
-/**
- * TypeScript/JavaScript: const user = getUser() — variable_declarator with call_expression value.
- * Only matches unannotated declarators; annotated ones are handled by extractDeclaration.
- * await is unwrapped: const user = await fetchUser() → callee = 'fetchUser'.
- */
-const extractTsJsConstructorBinding = (node: SyntaxNode): { varName: string; calleeName: string } | undefined => {
-  if (node.type !== 'variable_declarator') return undefined;
-  // Skip if has an explicit type annotation — extractDeclaration handles those
-  if (node.childForFieldName('type')) return undefined;
-  for (const child of node.children) {
-    if (child.type === 'type_annotation') return undefined;
-  }
-  const nameNode = node.childForFieldName('name');
-  if (!nameNode || nameNode.type !== 'identifier') return undefined;
-  let value = node.childForFieldName('value');
-  if (!value) return undefined;
-  // Unwrap await expressions: const user = await fetchUser()
-  if (value.type === 'await_expression') {
-    value = value.firstNamedChild;
-    if (!value) return undefined;
-  }
-  if (value.type !== 'call_expression') return undefined;
-  // Skip new_expression — extractInitializer handles constructor calls
-  const func = value.childForFieldName('function');
-  if (!func) return undefined;
-  const calleeName = extractSimpleTypeName(func);
-  if (!calleeName) return undefined;
-  return { varName: nameNode.text, calleeName };
-};
-
-/** Language-specific constructor-binding scanners. */
-const CONSTRUCTOR_BINDING_SCANNERS: Partial<Record<SupportedLanguages, (node: SyntaxNode) => { varName: string; calleeName: string } | undefined>> = {
-  // TypeScript/JavaScript share the same variable_declarator scanner
-  [SupportedLanguages.TypeScript]: extractTsJsConstructorBinding,
-  [SupportedLanguages.JavaScript]: extractTsJsConstructorBinding,
-
-  // Kotlin: val x = User(...) — property_declaration with call_expression
-  [SupportedLanguages.Kotlin]: (node) => {
-    if (node.type !== 'property_declaration') return undefined;
-    const varDecl = node.namedChildren.find(c => c.type === 'variable_declaration');
-    if (!varDecl) return undefined;
-    if (varDecl.namedChildren.some(c => c.type === 'user_type')) return undefined;
-    const callExpr = node.namedChildren.find(c => c.type === 'call_expression');
-    if (!callExpr) return undefined;
-    const callee = callExpr.firstNamedChild;
-    if (!callee || callee.type !== 'simple_identifier') return undefined;
-    const nameNode = varDecl.namedChildren.find(c => c.type === 'simple_identifier');
-    if (!nameNode) return undefined;
-    return { varName: nameNode.text, calleeName: callee.text };
-  },
-
-  // Python: user = User("alice") — assignment with call
-  // Also handles walrus operator: (user := User("alice"))
-  [SupportedLanguages.Python]: (node) => {
-    let left: SyntaxNode | null;
-    let right: SyntaxNode | null;
-
-    if (node.type === 'named_expression') {
-      // Walrus operator: (user := User("alice"))
-      left = node.childForFieldName('name');
-      right = node.childForFieldName('value');
-    } else if (node.type === 'assignment') {
-      left = node.childForFieldName('left');
-      right = node.childForFieldName('right');
-      // Skip annotated assignments — extractDeclaration handles those
-      if (node.childForFieldName('type')) return undefined;
-    } else {
-      return undefined;
-    }
-
-    if (!left || !right) return undefined;
-    if (left.type !== 'identifier') return undefined;
-    if (right.type !== 'call') return undefined;
-    const func = right.childForFieldName('function');
-    if (!func) return undefined;
-    // Support both direct calls (User()) and qualified calls (models.User())
-    const calleeName = extractSimpleTypeName(func);
-    if (!calleeName) return undefined;
-    return { varName: left.text, calleeName };
-  },
-
-  // Swift: let user = User(name: "alice") — property_declaration with call_expression
-  [SupportedLanguages.Swift]: (node) => {
-    if (node.type !== 'property_declaration') return undefined;
-    // Skip if has type annotation
-    if (node.childForFieldName('type')) return undefined;
-    for (let i = 0; i < node.namedChildCount; i++) {
-      if (node.namedChild(i)?.type === 'type_annotation') return undefined;
-    }
-    const pattern = node.childForFieldName('pattern');
-    if (!pattern) return undefined;
-    const varName = pattern.text;
-    if (!varName) return undefined;
-    // Find call_expression child
-    let callExpr: SyntaxNode | null = null;
-    for (let i = 0; i < node.namedChildCount; i++) {
-      const child = node.namedChild(i);
-      if (child?.type === 'call_expression') { callExpr = child; break; }
-    }
-    if (!callExpr) return undefined;
-    const callee = callExpr.firstNamedChild;
-    if (!callee) return undefined;
-    // Direct call: User(name: "alice") — simple_identifier callee
-    if (callee.type === 'simple_identifier') {
-      return { varName, calleeName: callee.text };
-    }
-    // Explicit init: User.init(name: "alice") — navigation_expression with .init suffix
-    if (callee.type === 'navigation_expression') {
-      const receiver = callee.firstNamedChild;
-      const suffix = callee.lastNamedChild;
-      if (receiver?.type === 'simple_identifier' && suffix?.text === 'init') {
-        return { varName, calleeName: receiver.text };
-      }
-    }
-    return undefined;
-  },
-
-  // C++: auto x = User() where User is parsed as identifier (cross-file)
-  // Note: C is excluded — C has no constructors and `auto` is a storage-class specifier, not type inference.
-  [SupportedLanguages.CPlusPlus]: extractCppConstructorBinding,
-
-  // Ruby: user = User.new — uses shared helper that also handles Models::User.new
-  [SupportedLanguages.Ruby]: extractRubyConstructorAssignment,
-
-  // Rust: let user = get_user("alice") — let_declaration with call_expression value, no type annotation.
-  // Skips `let user: User = ...` (explicit type annotation — handled by extractDeclaration).
-  // Skips `let user = User::new()` (scoped_identifier callee named "new" — handled by extractInitializer).
-  // Unwraps `let mut user = get_user()` by looking inside mut_pattern for the inner identifier.
-  [SupportedLanguages.Rust]: (node) => {
-    if (node.type !== 'let_declaration') return undefined;
-    // Skip if has explicit type annotation — extractDeclaration handles those
-    if (node.childForFieldName('type')) return undefined;
-    for (const child of node.children) {
-      if (child.type === 'type_annotation') return undefined;
-    }
-    let patternNode = node.childForFieldName('pattern');
-    if (!patternNode) return undefined;
-    // Unwrap mut: `let mut user` → mut_pattern > identifier
-    if (patternNode.type === 'mut_pattern') {
-      patternNode = patternNode.firstNamedChild;
-      if (!patternNode) return undefined;
-    }
-    if (patternNode.type !== 'identifier') return undefined;
-    const value = node.childForFieldName('value');
-    if (!value || value.type !== 'call_expression') return undefined;
-    const func = value.childForFieldName('function');
-    if (!func) return undefined;
-    // Skip Struct::new() patterns — handled by extractInitializer in rust.ts
-    if (func.type === 'scoped_identifier') {
-      const methodName = func.lastNamedChild;
-      if (methodName?.text === 'new') return undefined;
-    }
-    const calleeName = extractSimpleTypeName(func);
-    if (!calleeName) return undefined;
-    return { varName: patternNode.text, calleeName };
-  },
-
-  // PHP: $user = getUser() — assignment_expression with variable_name left and function_call_expression right
-  // object_creation_expression ($user = new User()) is handled by extractInitializer.
-  // Explicit typed properties (private UserRepo $repo) are handled by extractDeclaration.
-  // PHP variable names include the $ sigil — kept as-is to match what extractVarName stores in the env.
-  [SupportedLanguages.PHP]: (node) => {
-    if (node.type !== 'assignment_expression') return undefined;
-    const left = node.childForFieldName('left');
-    const right = node.childForFieldName('right');
-    if (!left || !right) return undefined;
-    if (left.type !== 'variable_name') return undefined;
-    // Skip object_creation_expression (new User()) — handled by extractInitializer
-    if (right.type === 'object_creation_expression') return undefined;
-    if (right.type !== 'function_call_expression') return undefined;
-    const func = right.childForFieldName('function') ?? right.firstNamedChild;
-    if (!func) return undefined;
-    const calleeName = extractSimpleTypeName(func);
-    if (!calleeName) return undefined;
-    // Keep the $ sigil — PHP env keys are stored with $ (e.g. "$user") by extractVarName
-    const varName = left.text;
-    if (!varName) return undefined;
-    return { varName, calleeName };
-  },
-
-  // Java: var user = getUser() — local_variable_declaration with `var` type and method_invocation value
-  // Explicit types (User user = getUser()) are handled by extractDeclaration.
-  // object_creation_expression (new User()) is handled by extractJavaInitializer.
-  [SupportedLanguages.Java]: (node) => {
-    if (node.type !== 'local_variable_declaration') return undefined;
-    const typeNode = node.childForFieldName('type');
-    if (!typeNode) return undefined;
-    // Only handle `var` — explicit types are handled by extractDeclaration
-    if (typeNode.text !== 'var') return undefined;
-    const declarator = node.namedChildren.find((c: any) => c.type === 'variable_declarator');
-    if (!declarator) return undefined;
-    const nameNode = declarator.childForFieldName('name');
-    const value = declarator.childForFieldName('value');
-    if (!nameNode || !value) return undefined;
-    // Skip object_creation_expression (new User()) — handled by extractInitializer
-    if (value.type === 'object_creation_expression') return undefined;
-    if (value.type !== 'method_invocation') return undefined;
-    const methodName = value.childForFieldName('name');
-    if (!methodName) return undefined;
-    return { varName: nameNode.text, calleeName: methodName.text };
-  },
-
-  // C#: var user = GetUser() — variable_declaration with implicit_type and invocation_expression value.
-  // Explicit types (User user = GetUser()) are handled by extractDeclaration.
-  // object_creation_expression (new User()) is handled by extractInitializer.
-  [SupportedLanguages.CSharp]: (node) => {
-    if (node.type !== 'variable_declaration') return undefined;
-    const typeNode = node.childForFieldName('type');
-    // Only handle implicit_type (var) — explicit types handled by extractDeclaration
-    if (!typeNode || typeNode.type !== 'implicit_type') return undefined;
-    // Find first variable_declarator child
-    let declarator: any = null;
-    for (let i = 0; i < node.namedChildCount; i++) {
-      const child = node.namedChild(i);
-      if (child?.type === 'variable_declarator') { declarator = child; break; }
-    }
-    if (!declarator) return undefined;
-    const nameNode = declarator.childForFieldName('name') ?? declarator.firstNamedChild;
-    if (!nameNode || nameNode.type !== 'identifier') return undefined;
-    // Find equals_value_clause
-    let eqClause: any = null;
-    for (let i = 0; i < declarator.namedChildCount; i++) {
-      const child = declarator.namedChild(i);
-      if (child?.type === 'equals_value_clause') { eqClause = child; break; }
-    }
-    if (!eqClause) return undefined;
-    const value = eqClause.firstNamedChild;
-    if (!value) return undefined;
-    // Skip object_creation_expression (new User()) — handled by extractInitializer
-    if (value.type === 'object_creation_expression') return undefined;
-    if (value.type !== 'invocation_expression') return undefined;
-    const func = value.firstNamedChild;
-    if (!func) return undefined;
-    const calleeName = extractSimpleTypeName(func);
-    if (!calleeName) return undefined;
-    return { varName: nameNode.text, calleeName };
-  },
-
-  // Go: user := GetUser("alice") — short_var_declaration with single call_expression on the right.
-  // Multi-return (`user, err := GetUser()`) is intentionally skipped.
-  // new() and make() are already handled by extractDeclaration in go.ts.
-  [SupportedLanguages.Go]: (node) => {
-    if (node.type !== 'short_var_declaration') return undefined;
-    const left = node.childForFieldName('left');
-    const right = node.childForFieldName('right');
-    if (!left || !right) return undefined;
-    // Single assignment only — skip multi-return like `user, err := GetUser()`
-    const leftIds = left.type === 'expression_list' ? left.namedChildren : [left];
-    if (leftIds.length !== 1 || leftIds[0].type !== 'identifier') return undefined;
-    const rightExprs = right.type === 'expression_list' ? right.namedChildren : [right];
-    if (rightExprs.length !== 1 || rightExprs[0].type !== 'call_expression') return undefined;
-    const func = rightExprs[0].childForFieldName('function');
-    if (!func) return undefined;
-    // Skip new() and make() — already handled by extractDeclaration
-    if (func.text === 'new' || func.text === 'make') return undefined;
-    const calleeName = extractSimpleTypeName(func);
-    if (!calleeName) return undefined;
-    return { varName: leftIds[0].text, calleeName };
-  },
-};
 

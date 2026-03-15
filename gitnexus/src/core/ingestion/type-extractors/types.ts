@@ -13,6 +13,10 @@ export type ClassNameLookup = { has(name: string): boolean };
 /** Extracts type bindings from a constructor-call initializer, with access to known class names */
 export type InitializerExtractor = (node: SyntaxNode, env: Map<string, string>, classNames: ClassNameLookup) => void;
 
+/** Scans an AST node for untyped `var = callee()` patterns for return-type inference.
+ *  Returns { varName, calleeName } if the node matches, undefined otherwise. */
+export type ConstructorBindingScanner = (node: SyntaxNode) => { varName: string; calleeName: string } | undefined;
+
 /** Per-language type extraction configuration */
 export interface LanguageTypeConfig {
   /** Node types that represent typed declarations for this language */
@@ -26,4 +30,8 @@ export interface LanguageTypeConfig {
    *  Only for languages with syntactic constructor markers (new, composite_literal, ::new).
    *  Receives classNames — the set of class/struct names visible in the current file's AST. */
   extractInitializer?: InitializerExtractor;
+  /** Scan for untyped `var = callee()` assignments for return-type inference.
+   *  Called on every AST node during buildTypeEnv walk; returns undefined for non-matches.
+   *  The callee binding is unverified — the caller must confirm against the SymbolTable. */
+  scanConstructorBinding?: ConstructorBindingScanner;
 }

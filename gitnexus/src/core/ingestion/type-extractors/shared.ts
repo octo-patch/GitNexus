@@ -217,6 +217,38 @@ export const extractRubyConstructorAssignment = (
   return { varName: left.text, calleeName };
 };
 
+/**
+ * Check if an AST node has an explicit type annotation.
+ * Checks both named fields ('type') and child nodes ('type_annotation').
+ * Used by constructor binding scanners to skip annotated declarations.
+ */
+export const hasTypeAnnotation = (node: SyntaxNode): boolean => {
+  if (node.childForFieldName('type')) return true;
+  for (let i = 0; i < node.childCount; i++) {
+    if (node.child(i)?.type === 'type_annotation') return true;
+  }
+  return false;
+};
+
+/**
+ * Unwrap an await_expression to get the inner value.
+ * Returns the node itself if not an await_expression, or null if input is null.
+ */
+export const unwrapAwait = (node: SyntaxNode | null): SyntaxNode | null => {
+  if (!node) return null;
+  return node.type === 'await_expression' ? node.firstNamedChild : node;
+};
+
+/**
+ * Extract the callee name from a call_expression node.
+ * Navigates to the 'function' field (or first named child) and extracts a simple type name.
+ */
+export const extractCalleeName = (callNode: SyntaxNode): string | undefined => {
+  const func = callNode.childForFieldName('function') ?? callNode.firstNamedChild;
+  if (!func) return undefined;
+  return extractSimpleTypeName(func);
+};
+
 /** Find the first named child with the given node type */
 export const findChildByType = (node: SyntaxNode, type: string): SyntaxNode | null => {
   for (let i = 0; i < node.namedChildCount; i++) {

@@ -182,4 +182,5 @@ export const typeConfig: LanguageTypeConfig = {
   extractDeclaration,
   extractParameter,
   extractInitializer,
+  scanConstructorBinding: extractRubyConstructorAssignment,
 };

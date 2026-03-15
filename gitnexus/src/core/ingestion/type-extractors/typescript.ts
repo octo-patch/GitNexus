@@ -1,6 +1,6 @@
 import type { SyntaxNode } from '../utils.js';
-import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup } from './types.js';
-import { extractSimpleTypeName, extractVarName } from './shared.js';
+import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup, ConstructorBindingScanner } from './types.js';
+import { extractSimpleTypeName, extractVarName, hasTypeAnnotation, unwrapAwait, extractCalleeName } from './shared.js';
 
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
   'lexical_declaration',
@@ -65,9 +65,27 @@ const extractInitializer: InitializerExtractor = (node: SyntaxNode, env: Map<str
   }
 };
 
+/**
+ * TypeScript/JavaScript: const user = getUser() — variable_declarator with call_expression value.
+ * Only matches unannotated declarators; annotated ones are handled by extractDeclaration.
+ * await is unwrapped: const user = await fetchUser() → callee = 'fetchUser'.
+ */
+const scanConstructorBinding: ConstructorBindingScanner = (node) => {
+  if (node.type !== 'variable_declarator') return undefined;
+  if (hasTypeAnnotation(node)) return undefined;
+  const nameNode = node.childForFieldName('name');
+  if (!nameNode || nameNode.type !== 'identifier') return undefined;
+  const value = unwrapAwait(node.childForFieldName('value'));
+  if (!value || value.type !== 'call_expression') return undefined;
+  const calleeName = extractCalleeName(value);
+  if (!calleeName) return undefined;
+  return { varName: nameNode.text, calleeName };
+};
+
 export const typeConfig: LanguageTypeConfig = {
   declarationNodeTypes: DECLARATION_NODE_TYPES,
   extractDeclaration,
   extractParameter,
   extractInitializer,
+  scanConstructorBinding,
 };

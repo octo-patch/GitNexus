@@ -1,5 +1,5 @@
 import type { SyntaxNode } from '../utils.js';
-import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor } from './types.js';
+import type { ConstructorBindingScanner, LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor } from './types.js';
 import { extractSimpleTypeName, extractVarName, findChildByType } from './shared.js';
 
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
@@ -103,8 +103,43 @@ const extractParameter: ParameterExtractor = (node: SyntaxNode, env: Map<string,
   if (varName && typeName) env.set(varName, typeName);
 };
 
+/** C#: var x = SomeFactory(...) → bind x to SomeFactory (constructor-like call) */
+const scanConstructorBinding: ConstructorBindingScanner = (node) => {
+  if (node.type !== 'variable_declaration') return undefined;
+  const typeNode = node.childForFieldName('type');
+  // Only handle implicit_type (var) — explicit types handled by extractDeclaration
+  if (!typeNode || typeNode.type !== 'implicit_type') return undefined;
+  // Find first variable_declarator child
+  let declarator: SyntaxNode | null = null;
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (child?.type === 'variable_declarator') { declarator = child; break; }
+  }
+  if (!declarator) return undefined;
+  const nameNode = declarator.childForFieldName('name') ?? declarator.firstNamedChild;
+  if (!nameNode || nameNode.type !== 'identifier') return undefined;
+  // Find equals_value_clause
+  let eqClause: SyntaxNode | null = null;
+  for (let i = 0; i < declarator.namedChildCount; i++) {
+    const child = declarator.namedChild(i);
+    if (child?.type === 'equals_value_clause') { eqClause = child; break; }
+  }
+  if (!eqClause) return undefined;
+  const value = eqClause.firstNamedChild;
+  if (!value) return undefined;
+  // Skip object_creation_expression (new User()) — handled by extractInitializer
+  if (value.type === 'object_creation_expression') return undefined;
+  if (value.type !== 'invocation_expression') return undefined;
+  const func = value.firstNamedChild;
+  if (!func) return undefined;
+  const calleeName = extractSimpleTypeName(func);
+  if (!calleeName) return undefined;
+  return { varName: nameNode.text, calleeName };
+};
+
 export const typeConfig: LanguageTypeConfig = {
   declarationNodeTypes: DECLARATION_NODE_TYPES,
   extractDeclaration,
   extractParameter,
+  scanConstructorBinding,
 };

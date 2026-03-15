@@ -1,6 +1,6 @@
 import type { SyntaxNode } from '../utils.js';
-import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup } from './types.js';
-import { extractSimpleTypeName, extractVarName, findChildByType } from './shared.js';
+import type { LanguageTypeConfig, ParameterExtractor, TypeBindingExtractor, InitializerExtractor, ClassNameLookup, ConstructorBindingScanner } from './types.js';
+import { extractSimpleTypeName, extractVarName, findChildByType, hasTypeAnnotation } from './shared.js';
 
 const DECLARATION_NODE_TYPES: ReadonlySet<string> = new Set([
   'property_declaration',
@@ -77,9 +77,39 @@ const extractInitializer: InitializerExtractor = (node: SyntaxNode, env: Map<str
   }
 };
 
+/** Swift: let user = User(name: "alice") — scan property_declaration for constructor binding */
+const scanConstructorBinding: ConstructorBindingScanner = (node) => {
+  if (node.type !== 'property_declaration') return undefined;
+  if (hasTypeAnnotation(node)) return undefined;
+  const pattern = node.childForFieldName('pattern');
+  if (!pattern) return undefined;
+  const varName = pattern.text;
+  if (!varName) return undefined;
+  let callExpr: SyntaxNode | null = null;
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (child?.type === 'call_expression') { callExpr = child; break; }
+  }
+  if (!callExpr) return undefined;
+  const callee = callExpr.firstNamedChild;
+  if (!callee) return undefined;
+  if (callee.type === 'simple_identifier') {
+    return { varName, calleeName: callee.text };
+  }
+  if (callee.type === 'navigation_expression') {
+    const receiver = callee.firstNamedChild;
+    const suffix = callee.lastNamedChild;
+    if (receiver?.type === 'simple_identifier' && suffix?.text === 'init') {
+      return { varName, calleeName: receiver.text };
+    }
+  }
+  return undefined;
+};
+
 export const typeConfig: LanguageTypeConfig = {
   declarationNodeTypes: DECLARATION_NODE_TYPES,
   extractDeclaration,
   extractParameter,
   extractInitializer,
+  scanConstructorBinding,
 };
