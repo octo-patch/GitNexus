@@ -22,7 +22,7 @@ export const extractSimpleTypeName = (typeNode: SyntaxNode): string | undefined 
     const last = typeNode.lastNamedChild;
     if (last && (last.type === 'type_identifier' || last.type === 'identifier'
       || last.type === 'simple_identifier' || last.type === 'name'
-      || last.type === 'constant')) {
+      || last.type === 'constant' || last.type === 'property_identifier')) {
       return last.text;
     }
   }

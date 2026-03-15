@@ -544,8 +544,8 @@ describe('Go type assertion type inference', () => {
 
 // ---------------------------------------------------------------------------
 // Return type inference: user := GetUser("alice"); user.Save()
-// Go has no CONSTRUCTOR_BINDING_SCANNER for short variable declarations yet,
-// so return type inference does NOT work end-to-end for `user := GetUser()`.
+// Go now has a CONSTRUCTOR_BINDING_SCANNER for short_var_declaration, so
+// return type inference works end-to-end for `user := GetUser()`.
 // ---------------------------------------------------------------------------
 
 describe('Go return type inference via explicit function return type', () => {
@@ -565,12 +565,21 @@ describe('Go return type inference via explicit function return type', () => {
   });
 
   it('resolves user.Save() to User#Save via return type of GetUser() *models.User', () => {
-    // Go's extractMethodSignature captures *models.User as the return type.
-    // extractReturnTypeName strips the pointer prefix and qualified name → User.
+    // The Go CONSTRUCTOR_BINDING_SCANNER registers `user` → GetUser in the type
+    // environment.  Combined with GetUser's declared return type (*models.User),
+    // the pipeline resolves user.Save() to the correct User#Save method.
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
       c.target === 'Save' && c.source === 'processUser' && c.targetFilePath.includes('models')
     );
+    expect(saveCall).toBeDefined();
+  });
+
+  it('resolves user.Save() via short_var_declaration binding (CONSTRUCTOR_BINDING_SCANNER)', () => {
+    // Verifies that the scanner path — not just explicit return-type annotation —
+    // is responsible for establishing the user → User binding.
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c => c.target === 'Save' && c.targetFilePath.includes('models'));
     expect(saveCall).toBeDefined();
   });
 });

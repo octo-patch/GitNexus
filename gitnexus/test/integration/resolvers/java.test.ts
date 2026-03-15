@@ -529,8 +529,8 @@ describe('Java generic parent super resolution', () => {
 
 // ---------------------------------------------------------------------------
 // Return type inference: var user = svc.getUser("alice"); user.save()
-// Java has no CONSTRUCTOR_BINDING_SCANNER for `var` declarations yet,
-// so return type inference does NOT work end-to-end.
+// Java's CONSTRUCTOR_BINDING_SCANNER handles `var` declarations with
+// method_invocation values, enabling end-to-end return type inference.
 // ---------------------------------------------------------------------------
 
 describe('Java return type inference via explicit method return type', () => {
@@ -555,9 +555,9 @@ describe('Java return type inference via explicit method return type', () => {
   });
 
   it('resolves user.save() to User#save via return type of getUser(): User', () => {
-    // Java's type extractor handles `var user = svc.getUser()` through
-    // the local_variable_declaration path. The return type of getUser is User,
-    // enabling save() to resolve to User#save.
+    // Java's CONSTRUCTOR_BINDING_SCANNER binds `var user = svc.getUser()` to the
+    // return type of getUser (User), so the subsequent user.save() call resolves
+    // to User#save rather than an unresolved target.
     const calls = getRelationships(result, 'CALLS');
     const saveCall = calls.find(c =>
       c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('models')

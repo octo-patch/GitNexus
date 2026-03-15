@@ -145,3 +145,37 @@ describe.skipIf(!swiftAvailable)('Swift cross-file User.init() inference', () =>
     expect(greetCall!.source).toBe('main');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return type inference: let user = getUser(name: "alice"); user.save()
+// Swift's CONSTRUCTOR_BINDING_SCANNER captures property_declaration with
+// call_expression values, enabling return type inference from function results.
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!swiftAvailable)('Swift return type inference', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'swift-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User class and getUser function', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Function')).toContain('getUser');
+  });
+
+  it('detects save function on User (Swift class methods are Function nodes)', () => {
+    expect(getNodesByLabel(result, 'Function')).toContain('save');
+  });
+
+  it('resolves user.save() to User#save via return type of getUser() -> User', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('Models.swift'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

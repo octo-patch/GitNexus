@@ -877,12 +877,11 @@ class RepoService {
         expect(flatGet(env, 'user')).toBe('BaseUser');
       });
 
-      it('does not infer from namespaced constructor (known limitation)', () => {
-        // extractSimpleTypeName only handles simple identifiers, not member expressions
+      it('infers from namespaced constructor: new ns.Service()', () => {
+        // extractSimpleTypeName handles member_expression via property_identifier
         const tree = parse('const svc = new ns.Service();', TypeScript.typescript);
         const { env } = buildTypeEnv(tree, 'typescript');
-        // member_expression as constructor → extractSimpleTypeName returns undefined
-        expect(flatGet(env, 'svc')).toBeUndefined();
+        expect(flatGet(env, 'svc')).toBe('Service');
       });
 
       it('infers type from new expression with as cast', () => {
@@ -1743,6 +1742,57 @@ svc = App::Models::Service.new
       const { constructorBindings } = buildTypeEnv(tree, 'kotlin');
       expect(constructorBindings.length).toBe(1);
       expect(constructorBindings[0].scope).toMatch(/^process@\d+$/);
+    });
+
+    it('returns constructor bindings for TypeScript const user = getUser()', () => {
+      const tree = parse('const user = getUser();', TypeScript.typescript);
+      const { env, constructorBindings } = buildTypeEnv(tree, 'typescript');
+      expect(flatGet(env, 'user')).toBeUndefined();
+      expect(constructorBindings.length).toBe(1);
+      expect(constructorBindings[0].varName).toBe('user');
+      expect(constructorBindings[0].calleeName).toBe('getUser');
+    });
+
+    it('does NOT emit constructor binding when TypeScript var has explicit type annotation', () => {
+      const tree = parse('const user: User = getUser();', TypeScript.typescript);
+      const { env, constructorBindings } = buildTypeEnv(tree, 'typescript');
+      expect(flatGet(env, 'user')).toBe('User');
+      expect(constructorBindings.find(b => b.varName === 'user')).toBeUndefined();
+    });
+
+    it('skips destructuring patterns (array_pattern) for TypeScript', () => {
+      const tree = parse('const [a, b] = getPair();', TypeScript.typescript);
+      const { constructorBindings } = buildTypeEnv(tree, 'typescript');
+      expect(constructorBindings).toEqual([]);
+    });
+
+    it('skips destructuring patterns (object_pattern) for TypeScript', () => {
+      const tree = parse('const { name, age } = getUser();', TypeScript.typescript);
+      const { constructorBindings } = buildTypeEnv(tree, 'typescript');
+      expect(constructorBindings).toEqual([]);
+    });
+
+    it('unwraps await in TypeScript: const user = await fetchUser()', () => {
+      const tree = parse('async function f() { const user = await fetchUser(); }', TypeScript.typescript);
+      const { constructorBindings } = buildTypeEnv(tree, 'typescript');
+      expect(constructorBindings.length).toBe(1);
+      expect(constructorBindings[0].varName).toBe('user');
+      expect(constructorBindings[0].calleeName).toBe('fetchUser');
+    });
+
+    it('handles qualified callee in TypeScript: const user = repo.getUser()', () => {
+      const tree = parse('const user = repo.getUser();', TypeScript.typescript);
+      const { constructorBindings } = buildTypeEnv(tree, 'typescript');
+      expect(constructorBindings.length).toBe(1);
+      expect(constructorBindings[0].varName).toBe('user');
+      expect(constructorBindings[0].calleeName).toBe('getUser');
+    });
+
+    it('does not emit binding for TypeScript new expression (handled by extractInitializer)', () => {
+      const tree = parse('const user = new User();', TypeScript.typescript);
+      const { env, constructorBindings } = buildTypeEnv(tree, 'typescript');
+      expect(flatGet(env, 'user')).toBe('User');
+      expect(constructorBindings.find(b => b.varName === 'user')).toBeUndefined();
     });
   });
 });

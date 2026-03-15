@@ -854,9 +854,8 @@ describe('TypeScript nullable receiver resolution (optional chaining)', () => {
 
 // ---------------------------------------------------------------------------
 // Return type inference: const user = getUser('alice'); user.save()
-// TS/JS has no CONSTRUCTOR_BINDING_SCANNER for plain function calls yet,
-// so return type inference does NOT work end-to-end. These tests document
-// the current state and will activate once a TS scanner is added.
+// The TS/JS CONSTRUCTOR_BINDING_SCANNER captures variable_declarator nodes
+// with plain call_expression values, enabling end-to-end return type inference.
 // ---------------------------------------------------------------------------
 
 describe('TypeScript return type inference via explicit function return type', () => {

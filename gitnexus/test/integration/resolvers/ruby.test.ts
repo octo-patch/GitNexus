@@ -587,3 +587,39 @@ describe('Ruby namespaced constructor resolution (Models::UserService.new)', () 
     expect(validateCall).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return type inference: user = get_user('alice'); user.save
+// Ruby's CONSTRUCTOR_BINDING_SCANNER captures assignment nodes with
+// User.new calls. For plain function calls like get_user(), inference
+// works via the scanner + SymbolTable return type lookup.
+// ---------------------------------------------------------------------------
+
+describe('Ruby return type inference via function call', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'ruby-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User class and get_user method', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    // Ruby `def` is always captured as definition.method (Method label)
+    expect(getNodesByLabel(result, 'Method')).toContain('get_user');
+  });
+
+  it('detects save method on User', () => {
+    expect(getNodesByLabel(result, 'Method')).toContain('save');
+  });
+
+  it('resolves user.save to User#save via return type of get_user()', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'process_user' && c.targetFilePath.includes('models.rb'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

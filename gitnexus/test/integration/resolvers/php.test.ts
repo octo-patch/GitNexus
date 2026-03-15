@@ -695,3 +695,39 @@ describe('PHP typed class property resolution', () => {
     expect(saveCall!.targetFilePath).toBe('app/Models/UserRepo.php');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return type inference: $user = $this->getUser("alice"); $user->save()
+// PHP's CONSTRUCTOR_BINDING_SCANNER captures assignment_expression with
+// function_call_expression values, enabling return type inference.
+// ---------------------------------------------------------------------------
+
+describe('PHP return type inference via function call', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'php-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User and UserService classes', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+  });
+
+  it('detects save and getUser methods', () => {
+    const methods = getNodesByLabel(result, 'Method');
+    expect(methods).toContain('save');
+    expect(methods).toContain('getUser');
+  });
+
+  it('resolves $user->save() to User#save via return type of getUser(): User', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'save' && c.source === 'processUser' && c.targetFilePath.includes('User.php'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

@@ -558,3 +558,42 @@ describe('C# is pattern matching resolution', () => {
     expect(catExtends!.target).toBe('Animal');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return type inference: var user = svc.GetUser("alice"); user.Save()
+// C#'s CONSTRUCTOR_BINDING_SCANNER handles `var` declarations with
+// invocation_expression values, enabling end-to-end return type inference.
+// ---------------------------------------------------------------------------
+
+describe('C# return type inference via var + invocation', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'csharp-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User and UserService classes', () => {
+    expect(getNodesByLabel(result, 'Class')).toContain('User');
+    expect(getNodesByLabel(result, 'Class')).toContain('UserService');
+  });
+
+  it('detects Save and GetUser methods', () => {
+    const methods = getNodesByLabel(result, 'Method');
+    expect(methods).toContain('Save');
+    expect(methods).toContain('GetUser');
+  });
+
+  it('resolves user.Save() to User#Save via return type of GetUser(): User', () => {
+    // C#'s CONSTRUCTOR_BINDING_SCANNER binds `var user = svc.GetUser()` to the
+    // return type of GetUser (User), so the subsequent user.Save() call resolves
+    // to User#Save rather than an unresolved target.
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c =>
+      c.target === 'Save' && c.source === 'Run' && c.targetFilePath.includes('Models'),
+    );
+    expect(saveCall).toBeDefined();
+  });
+});

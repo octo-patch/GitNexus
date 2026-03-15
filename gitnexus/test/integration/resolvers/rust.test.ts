@@ -600,3 +600,39 @@ describe('Rust if-let captured_pattern type resolution', () => {
     expect(validateCall!.targetFilePath).toBe('models.rs');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Return type inference: let user = get_user("alice"); user.save()
+// Plain function call (no ::new) with no type annotation
+// ---------------------------------------------------------------------------
+
+describe('Rust return type inference', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'rust-return-type'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects User struct and get_user + save functions', () => {
+    expect(getNodesByLabel(result, 'Struct')).toContain('User');
+    expect(getNodesByLabel(result, 'Function')).toContain('get_user');
+    expect(getNodesByLabel(result, 'Function')).toContain('save');
+  });
+
+  it('resolves main → get_user as a CALLS edge to src/models.rs', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const getUserCall = calls.find(c => c.target === 'get_user' && c.source === 'main');
+    expect(getUserCall).toBeDefined();
+    expect(getUserCall!.targetFilePath).toBe('src/models.rs');
+  });
+
+  it('resolves user.save() to src/models.rs via return-type-inferred binding', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const saveCall = calls.find(c => c.target === 'save' && c.source === 'main');
+    expect(saveCall).toBeDefined();
+    expect(saveCall!.targetFilePath).toBe('src/models.rs');
+  });
+});
