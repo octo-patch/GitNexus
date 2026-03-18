@@ -46,7 +46,7 @@ export async function resolveLLMConfig(overrides?: Partial<LLMConfig>): Promise<
     model: overrides?.model
       || process.env.GITNEXUS_MODEL
       || savedConfig.model
-      || 'minimax/minimax-m2.5',
+      || 'minimax/minimax-m2.7',
     maxTokens: overrides?.maxTokens ?? 16_384,
     temperature: overrides?.temperature ?? 0,
   };

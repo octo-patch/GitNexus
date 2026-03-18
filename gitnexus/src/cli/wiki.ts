@@ -161,7 +161,7 @@ export const wikiCommand = async (
 
       if (choice === '2') {
         baseUrl = 'https://openrouter.ai/api/v1';
-        defaultModel = 'minimax/minimax-m2.5';
+        defaultModel = 'minimax/minimax-m2.7';
       } else if (choice === '3') {
         baseUrl = await prompt('  Base URL (e.g. http://localhost:11434/v1): ');
         if (!baseUrl) {

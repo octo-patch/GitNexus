@@ -1,10 +1,10 @@
-# MiniMax M2.5 — via OpenRouter (set OPENROUTER_API_KEY in .env)
+# MiniMax M2.7 Highspeed — via OpenRouter (set OPENROUTER_API_KEY in .env)
+# High-speed version of M2.7 for low-latency scenarios.
 # Uses text-based model class because MiniMax doesn't support tool_calls natively.
 # The action_regex tells mini-swe-agent to parse ```bash blocks from responses.
-# Note: For the latest MiniMax model, see minimax-m2.7.yaml
 model:
   model_class: litellm_textbased
-  model_name: "openrouter/minimax/minimax-m2.5"
+  model_name: "openrouter/minimax/minimax-m2.7-highspeed"
   action_regex: "```(?:bash|mswea_bash_command)\\s*\\n(.*?)\\n```"
   cost_tracking: "ignore_errors"
   model_kwargs:
