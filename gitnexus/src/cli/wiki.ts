@@ -296,7 +296,7 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
         // OpenAI-compatible provider (OpenAI, OpenRouter, Custom)
         if (choice === '2') {
           baseUrl = 'https://openrouter.ai/api/v1';
-          defaultModel = 'minimax/minimax-m2.5';
+          defaultModel = 'minimax/minimax-m2.7';
           provider = 'openrouter';
         } else if (choice === '4') {
           baseUrl = await prompt('  Base URL (e.g. http://localhost:11434/v1): ');

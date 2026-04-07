@@ -125,7 +125,7 @@ describe('resolveLLMConfig', () => {
     const config = await resolveLLMConfig();
 
     expect(config.provider).toBe('openai');
-    expect(config.model).toBe('minimax/minimax-m2.5');
+    expect(config.model).toBe('minimax/minimax-m2.7');
     expect(config.baseUrl).toBe('https://openrouter.ai/api/v1');
   });
 

@@ -53,7 +53,7 @@ describe('isReasoningModel', () => {
   });
 
   it('returns false for minimax', () => {
-    expect(isReasoningModel('minimax/minimax-m2.5')).toBe(false);
+    expect(isReasoningModel('minimax/minimax-m2.7')).toBe(false);
   });
 
   it('respects explicit override', () => {

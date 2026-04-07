@@ -828,14 +828,14 @@ export const SettingsPanel = ({
                 onToggleVisibility: () => toggleApiKeyVisibility('minimax'),
               }}
               model={{
-                value: settings.minimax?.model ?? 'MiniMax-M2.5',
-                placeholder: 'e.g., MiniMax-M2.5, MiniMax-M2.5-highspeed',
+                value: settings.minimax?.model ?? 'MiniMax-M2.7',
+                placeholder: 'e.g., MiniMax-M2.7, MiniMax-M2.7-highspeed',
                 onChange: (value) =>
                   setSettings((prev) => ({
                     ...prev,
                     minimax: { ...prev.minimax!, model: value },
                   })),
-                helperText: 'Available: MiniMax-M2.5 (default), MiniMax-M2.5-highspeed (faster)',
+                helperText: 'Available: MiniMax-M2.7 (default), MiniMax-M2.7-highspeed (faster)',
               }}
             />
           )}
