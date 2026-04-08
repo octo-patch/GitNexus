@@ -192,7 +192,7 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
     } else {
       console.log("  No LLM configured. Let's set it up.\n");
       console.log(
-        '  Supports OpenAI, OpenRouter, Azure, any OpenAI-compatible API, or Cursor CLI.\n',
+        '  Supports OpenAI, OpenRouter, Azure, MiniMax, any OpenAI-compatible API, or Cursor CLI.\n',
       );
 
       // Check if Cursor CLI is available
@@ -203,12 +203,13 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
       console.log('  [2] OpenRouter (openrouter.ai)');
       console.log('  [3] Azure OpenAI');
       console.log('  [4] Custom endpoint');
+      console.log('  [5] MiniMax (api.minimax.io)');
       if (hasCursor) {
-        console.log('  [5] Cursor CLI (local, uses your Cursor subscription)');
+        console.log('  [6] Cursor CLI (local, uses your Cursor subscription)');
       }
       console.log('');
 
-      const maxChoice = hasCursor ? '5' : '4';
+      const maxChoice = hasCursor ? '6' : '5';
       const choice = await prompt(`  Select provider (1/${maxChoice}): `);
 
       let baseUrl: string;
@@ -216,7 +217,7 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
       let provider: LLMProvider = 'openai';
       let key = '';
 
-      if (choice === '5' && hasCursor) {
+      if (choice === '6' && hasCursor) {
         // Cursor CLI selected - model defaults to 'auto' (Cursor's default)
         provider = 'cursor';
         baseUrl = '';
@@ -293,7 +294,7 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
           provider: 'azure',
         };
       } else {
-        // OpenAI-compatible provider (OpenAI, OpenRouter, Custom)
+        // OpenAI-compatible provider (OpenAI, OpenRouter, MiniMax, Custom)
         if (choice === '2') {
           baseUrl = 'https://openrouter.ai/api/v1';
           defaultModel = 'minimax/minimax-m2.7';
@@ -307,6 +308,10 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
           }
           defaultModel = 'gpt-4o-mini';
           provider = 'custom';
+        } else if (choice === '5') {
+          baseUrl = 'https://api.minimax.io/v1';
+          defaultModel = 'MiniMax-M2.7';
+          provider = 'minimax';
         } else {
           baseUrl = 'https://api.openai.com/v1';
           defaultModel = 'gpt-4o-mini';
@@ -317,8 +322,12 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
         const modelInput = await prompt(`  Model (default: ${defaultModel}): `);
         const model = modelInput || defaultModel;
 
-        // API key — pre-fill hint if env var exists
-        const envKey = process.env.GITNEXUS_API_KEY || process.env.OPENAI_API_KEY || '';
+        // API key — pre-fill hint if env var exists (check MINIMAX_API_KEY for minimax provider)
+        const envKey =
+          (provider === 'minimax' ? process.env.MINIMAX_API_KEY : undefined) ||
+          process.env.GITNEXUS_API_KEY ||
+          process.env.OPENAI_API_KEY ||
+          '';
         if (envKey) {
           const masked = envKey.slice(0, 6) + '...' + envKey.slice(-4);
           const useEnv = await prompt(`  Use existing env key (${masked})? (Y/n): `);

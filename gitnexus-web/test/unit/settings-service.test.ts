@@ -104,6 +104,26 @@ describe('getActiveProviderConfig', () => {
     expect(config!.provider).toBe('openai');
   });
 
+  it('returns config for minimax when API key is set', () => {
+    const settings = loadSettings();
+    settings.activeProvider = 'minimax';
+    settings.minimax = { ...settings.minimax, apiKey: 'minimax-key-123', model: 'MiniMax-M2.7' };
+    saveSettings(settings);
+
+    const config = getActiveProviderConfig();
+    expect(config).not.toBeNull();
+    expect(config!.provider).toBe('minimax');
+  });
+
+  it('returns null for minimax with no API key', () => {
+    const settings = loadSettings();
+    settings.activeProvider = 'minimax';
+    settings.minimax = { ...settings.minimax, apiKey: '' };
+    saveSettings(settings);
+
+    expect(getActiveProviderConfig()).toBeNull();
+  });
+
   it('returns null for openrouter with empty API key', () => {
     const settings = loadSettings();
     settings.activeProvider = 'openrouter';
@@ -139,6 +159,7 @@ describe('getProviderDisplayName', () => {
     expect(getProviderDisplayName('anthropic')).toBe('Anthropic');
     expect(getProviderDisplayName('ollama')).toBe('Ollama (Local)');
     expect(getProviderDisplayName('openrouter')).toBe('OpenRouter');
+    expect(getProviderDisplayName('minimax')).toBe('MiniMax');
   });
 });
 
@@ -147,6 +168,13 @@ describe('getAvailableModels', () => {
     expect(getAvailableModels('openai').length).toBeGreaterThan(0);
     expect(getAvailableModels('ollama').length).toBeGreaterThan(0);
     expect(getAvailableModels('anthropic')).toContain('claude-sonnet-4-20250514');
+  });
+
+  it('returns MiniMax models', () => {
+    const models = getAvailableModels('minimax');
+    expect(models).toContain('MiniMax-M2.7');
+    expect(models).toContain('MiniMax-M2.7-highspeed');
+    expect(models.length).toBe(2);
   });
 
   it('returns empty array for unknown provider', () => {

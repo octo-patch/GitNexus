@@ -7,7 +7,7 @@
  * Config priority: CLI flags > env vars > defaults
  */
 
-export type LLMProvider = 'openai' | 'openrouter' | 'azure' | 'custom' | 'cursor';
+export type LLMProvider = 'openai' | 'openrouter' | 'azure' | 'custom' | 'cursor' | 'minimax';
 
 export interface LLMConfig {
   apiKey: string;
@@ -16,7 +16,7 @@ export interface LLMConfig {
   maxTokens: number;
   temperature: number;
   /** Provider type — controls auth header behaviour */
-  provider?: 'openai' | 'openrouter' | 'azure' | 'custom' | 'cursor';
+  provider?: LLMProvider;
   /** Azure api-version query param (e.g. '2024-10-21'). Appended to URL when set. */
   apiVersion?: string;
   /** When true, strips sampling params and uses max_completion_tokens instead of max_tokens */
@@ -39,8 +39,10 @@ export async function resolveLLMConfig(overrides?: Partial<LLMConfig>): Promise<
   const { loadCLIConfig } = await import('../../storage/repo-manager.js');
   const savedConfig = await loadCLIConfig();
 
+  const effectiveProvider = overrides?.provider || savedConfig.provider;
   const apiKey =
     overrides?.apiKey ||
+    (effectiveProvider === 'minimax' ? process.env.MINIMAX_API_KEY : undefined) ||
     process.env.GITNEXUS_API_KEY ||
     process.env.OPENAI_API_KEY ||
     savedConfig.apiKey ||
@@ -52,13 +54,13 @@ export async function resolveLLMConfig(overrides?: Partial<LLMConfig>): Promise<
       overrides?.baseUrl ||
       process.env.GITNEXUS_LLM_BASE_URL ||
       savedConfig.baseUrl ||
-      'https://openrouter.ai/api/v1',
+      (effectiveProvider === 'minimax' ? 'https://api.minimax.io/v1' : 'https://openrouter.ai/api/v1'),
     model:
       overrides?.model ||
       process.env.GITNEXUS_MODEL ||
       (savedConfig.provider === 'cursor' ? savedConfig.cursorModel : undefined) ||
       savedConfig.model ||
-      'minimax/minimax-m2.7',
+      (effectiveProvider === 'minimax' ? 'MiniMax-M2.7' : 'minimax/minimax-m2.7'),
     maxTokens: overrides?.maxTokens ?? 16_384,
     temperature: overrides?.temperature ?? 0,
     provider: overrides?.provider ?? savedConfig.provider ?? 'openai',
@@ -133,6 +135,9 @@ export async function callLLM(
   // Detect Azure endpoint (by provider field or URL pattern)
   const azure = config.provider === 'azure' || isAzureProvider(config.baseUrl);
 
+  // Detect MiniMax provider — temperature must be in (0.0, 1.0], clamp 0 to 1.0
+  const minimax = config.provider === 'minimax';
+
   // Warn when using Azure legacy deployment URL without api-version
   if (azure && !config.apiVersion && config.baseUrl.includes('/deployments/')) {
     console.warn(
@@ -156,8 +161,9 @@ export async function callLLM(
   body.max_completion_tokens = config.maxTokens;
 
   // Only send temperature for non-Azure providers — some Azure models reject non-default values
+  // MiniMax requires temperature in (0.0, 1.0] — clamp 0 to 1.0 to avoid API errors
   if (!reasoning && !azure && config.temperature !== undefined) {
-    body.temperature = config.temperature;
+    body.temperature = minimax && config.temperature === 0 ? 1.0 : config.temperature;
   }
 
   if (useStream) body.stream = true;

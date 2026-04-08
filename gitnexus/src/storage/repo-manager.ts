@@ -324,7 +324,7 @@ export interface CLIConfig {
   apiKey?: string;
   model?: string;
   baseUrl?: string;
-  provider?: 'openai' | 'openrouter' | 'azure' | 'custom' | 'cursor';
+  provider?: 'openai' | 'openrouter' | 'azure' | 'custom' | 'cursor' | 'minimax';
   cursorModel?: string;
   /** Azure api-version query param (e.g. '2024-10-21'). Only used when provider is 'azure'. */
   apiVersion?: string;

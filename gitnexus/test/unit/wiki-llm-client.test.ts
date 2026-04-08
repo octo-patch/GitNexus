@@ -330,3 +330,90 @@ describe('readSSEStream — content_filter handling', () => {
     ).rejects.toThrow('content filter');
   });
 });
+
+describe('callLLM — MiniMax provider', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('sends request to api.minimax.io with Bearer auth', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: 'hello' } }], usage: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { callLLM } = await import('../../src/core/wiki/llm-client.js');
+    await callLLM('test', {
+      apiKey: 'minimax-test-key',
+      baseUrl: 'https://api.minimax.io/v1',
+      model: 'MiniMax-M2.7',
+      maxTokens: 100,
+      temperature: 1.0,
+      provider: 'minimax',
+    });
+
+    const [url, init] = fetchSpy.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ];
+    expect(url).toContain('api.minimax.io/v1/chat/completions');
+    expect(init.headers['Authorization']).toBe('Bearer minimax-test-key');
+    expect((init.headers as any)['api-key']).toBeUndefined();
+  });
+
+  it('clamps temperature 0 to 1.0 for MiniMax to avoid API errors', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: 'hello' } }], usage: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { callLLM } = await import('../../src/core/wiki/llm-client.js');
+    await callLLM('test', {
+      apiKey: 'minimax-test-key',
+      baseUrl: 'https://api.minimax.io/v1',
+      model: 'MiniMax-M2.7',
+      maxTokens: 100,
+      temperature: 0,
+      provider: 'minimax',
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ];
+    const body = JSON.parse(init.body as string);
+    expect(body.temperature).toBe(1.0);
+  });
+
+  it('passes temperature unchanged when already > 0 for MiniMax', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: 'hello' } }], usage: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { callLLM } = await import('../../src/core/wiki/llm-client.js');
+    await callLLM('test', {
+      apiKey: 'minimax-test-key',
+      baseUrl: 'https://api.minimax.io/v1',
+      model: 'MiniMax-M2.7-highspeed',
+      maxTokens: 100,
+      temperature: 0.7,
+      provider: 'minimax',
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string> },
+    ];
+    const body = JSON.parse(init.body as string);
+    expect(body.temperature).toBe(0.7);
+    expect(body.model).toBe('MiniMax-M2.7-highspeed');
+  });
+});
